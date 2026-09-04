@@ -312,7 +312,7 @@ function StandardPage({ onView }: { onView: (p: Product) => void }) {
           {filtered.length ? <div className="standard-grid">{filtered.map((p) => <StandardCard key={p.id} product={p} onView={onView}/>)}</div> : <div className="empty-standard"><h2>No machines match these filters</h2><p>Try raising your price limit or clearing a filter.</p><Button onClick={clear}>Clear all filters</Button></div>}
         </section>
       </div>
-      <footer className="catalog-credit">Product photography from Pexels, used under the <a href="https://www.pexels.com/license/" target="_blank" rel="noreferrer">Pexels licence</a>. Images are illustrative; product names and specifications are fictional for this demonstration.</footer>
+      <footer className="catalog-credit">Product imagery is AI-generated and illustrative. Product names and specifications are fictional for this demonstration.</footer>
     </main>
   );
 }
@@ -421,7 +421,8 @@ function Comparison({ state, rows, onRemove, onClose }: { state: AppState; rows:
   return (
     <section className="comparison-section" aria-labelledby="comparison-title">
       <div className="comparison-title"><div><p className="eyebrow blue">Side by side</p><h2 id="comparison-title">Your comparison</h2></div><button onClick={onClose} aria-label="Close comparison"><X size={20}/></button></div>
-      <div className="comparison-scroll"><table><thead><tr><th>What matters</th>{compared.map((row) => <th key={row.product.id}><button className="remove-compare" onClick={() => onRemove(row.product.id)} aria-label={`Remove ${row.product.model}`}><X size={14}/></button><span>{row.product.brand}</span><strong>{row.product.model}</strong><em>£{row.product.price} · {metricValue('ownership_cost', row.metrics.ownership_cost)}</em></th>)}</tr></thead><tbody>{visible.map((definition) => <tr key={definition.id} data-comparison-row={definition.id}><th>{definition.label}</th>{compared.map((row) => <td key={row.product.id} className={!row.eligible && definition.id === 'eligible' ? 'comparison-fail' : ''}>{definition.value(row)}</td>)}</tr>)}</tbody></table></div>
+      <p id="comparison-scroll-hint" className="comparison-swipe-hint">Swipe to see the next machine <span aria-hidden="true">→</span></p>
+      <section className="comparison-scroll" aria-label="Product comparison" aria-describedby="comparison-scroll-hint"><table><thead><tr><th scope="col">What matters</th>{compared.map((row) => <th scope="col" key={row.product.id}><button className="remove-compare" onClick={() => onRemove(row.product.id)} aria-label={`Remove ${row.product.model}`}><X size={14}/></button><span>{row.product.brand}</span><strong>{row.product.model}</strong><em>£{row.product.price} · {metricValue('ownership_cost', row.metrics.ownership_cost)}</em></th>)}</tr></thead><tbody>{visible.map((definition) => <tr key={definition.id} data-comparison-row={definition.id}><th scope="row">{definition.label}</th>{compared.map((row) => <td key={row.product.id} className={!row.eligible && definition.id === 'eligible' ? 'comparison-fail' : ''}>{definition.value(row)}</td>)}</tr>)}</tbody></table></section>
       {!state.selectedComparisonRowIds && <button className="show-all" onClick={() => setExpandedKey(showAll ? null : comparisonKey)}>{showAll ? 'Show meaningful differences' : 'Show all specifications'}</button>}
     </section>
   );
@@ -509,7 +510,7 @@ function DecisionPage({ state, commit, replaceTransient, onView, announce, onUnd
       <Comparison state={state} rows={result.all} onRemove={toggleCompare} onClose={() => commit((s) => ({ ...s, compared: [], selectedComparisonRowIds: null }))}/>
       <CalculationSheet state={state} rows={result.all} onOpenChange={(open) => !open && replaceTransient((s) => ({ ...s, calculation: null }))}/>
       {state.compared.length > 0 && state.compared.length < 2 && <div className="compare-bottom"><span>Select one more machine to compare</span><button onClick={() => commit((s) => ({ ...s, compared: [], selectedComparisonRowIds: null }))}>Clear</button></div>}
-      <footer className="decision-footer"><p>Costs are estimates based on Eco 40–60 specifications and your inputs.</p><button onClick={() => commit((s) => ({ ...s, decision: null, calculation: null, showExcluded: false }))}><RotateCcw size={15}/>Return to standard results</button></footer>
+      <footer className="decision-footer"><p>Costs are estimates based on Eco 40–60 specifications and your inputs. Product imagery is AI-generated; names and specifications are fictional.</p><button onClick={() => commit((s) => ({ ...s, decision: null, calculation: null, showExcluded: false }))}><RotateCcw size={15}/>Return to standard results</button></footer>
     </main>
   );
 }

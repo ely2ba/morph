@@ -51,15 +51,15 @@ const seeds: readonly Seed[] = [
 
 const one = (n: number) => Math.round(n * 10) / 10;
 const catalogImages = [
-  '/images/washers/washer-ald-a6.jpg',
-  '/images/washers/washer-bri-b7.jpg',
-  '/images/washers/washer-cal-c8.jpg',
-  '/images/washers/washer-dov-d8.jpg',
-  '/images/washers/washer-elm-e8.jpg',
-  '/images/washers/washer-fen-f10.jpg',
-  '/images/washers/washer-gra-g10.jpg',
-  '/images/washers/washer-hux-h8i.jpg',
-  '/images/washers/washer-ion-i11.jpg',
+  '/images/washers/washer-ald-a6-unbranded.jpg',
+  '/images/washers/washer-bri-b7-unbranded.jpg',
+  '/images/washers/washer-cal-c8-unbranded.jpg',
+  '/images/washers/washer-dov-d8-unbranded.jpg',
+  '/images/washers/washer-elm-e8-unbranded.jpg',
+  '/images/washers/washer-fen-f10-unbranded.jpg',
+  '/images/washers/washer-gra-g10-unbranded.jpg',
+  '/images/washers/washer-hux-h8i-unbranded.jpg',
+  '/images/washers/washer-ion-i11-unbranded.jpg',
 ] as const;
 
 export const catalog: Product[] = seeds.map((seed, index) => {
