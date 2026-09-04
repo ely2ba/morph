@@ -12,11 +12,6 @@ type ToolDefinition = {
 };
 type ModelContext = { registerTool: (definition: ToolDefinition, options?: { signal?: AbortSignal }) => void | Promise<void> };
 
-declare global {
-  interface Document { modelContext?: ModelContext }
-  interface Navigator { modelContext?: ModelContext }
-}
-
 export type WebMcpHandlers = {
   readPage: (input: JsonObject, signal?: AbortSignal) => unknown;
   createDecisionView: (input: JsonObject, signal?: AbortSignal) => unknown;
@@ -119,7 +114,9 @@ const definitions = (handlers: WebMcpHandlers): ToolDefinition[] => [
 ];
 
 export function registerDecisionTools(handlers: WebMcpHandlers) {
-  const modelContext = document.modelContext ?? navigator.modelContext;
+  const modelContext =
+    (document as Document & { modelContext?: ModelContext }).modelContext ??
+    (navigator as Navigator & { modelContext?: ModelContext }).modelContext;
   if (!modelContext?.registerTool) return { available: false, abort: () => undefined };
   const controller = new AbortController();
   void (async () => {
