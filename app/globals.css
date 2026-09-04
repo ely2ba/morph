@@ -1597,10 +1597,17 @@ button {
 }
 .assistant-prompt-dialog h2 {
   max-width: 500px;
-  margin: 4px 38px 22px 0;
+  margin: 4px 38px 10px 0;
   font-size: clamp(25px, 4vw, 36px);
   line-height: 1.04;
   letter-spacing: -0.045em;
+}
+.assistant-prompt-note {
+  max-width: 510px;
+  margin: 0 0 22px;
+  color: #626058;
+  font-size: 14px;
+  line-height: 1.45;
 }
 .assistant-prompt-dialog h3 {
   margin: 0 0 10px;
@@ -1647,6 +1654,15 @@ button {
   margin: 0;
   font-size: 14px;
   line-height: 1.45;
+}
+.assistant-prompt-gallery article > div > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #68655d;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 .assistant-prompt-gallery button {
   display: inline-flex;

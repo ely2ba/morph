@@ -56,7 +56,7 @@ const proofs: ShowcaseProof[] = [
       },
     ],
     prompts: [
-      "Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.",
+      "Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.",
       "I measured it: 58 cm deep. Remove the questions, make the remaining products a compact table, and put the quietest machine below £550 first.",
       "Replace the table with a simple recommendation for my parents. Show what they sacrifice with each alternative and add a delivery calendar.",
     ],
@@ -93,7 +93,7 @@ const proofs: ShowcaseProof[] = [
       },
     ],
     prompts: [
-      "Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.",
+      "Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.",
       "Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.",
       "Now make it a simple day plan containing only step-free options that reach De Pijp before 7pm.",
     ],
@@ -130,7 +130,7 @@ const proofs: ShowcaseProof[] = [
       },
     ],
     prompts: [
-      "Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.",
+      "Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.",
       "Replace the edition with a chronological timeline of the tidal-energy story. Include only moments when a new verified fact appeared.",
       "Turn the timeline into a provenance map showing who reported each fact first, which publications repeated it, and where the evidence changed.",
     ],

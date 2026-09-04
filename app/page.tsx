@@ -693,7 +693,7 @@ function Header({ mcpAvailable }: { mcpAvailable: boolean }) {
           <AssistantPromptPanel
             className="assistant-prompt-retail"
             prompts={[
-              "Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.",
+              "Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.",
               "I measured it: 58 cm deep. Remove the questions, make the remaining products a compact table, and put the quietest machine below £550 first.",
               "Replace the table with a simple recommendation for my parents. Show what they sacrifice with each alternative and add a delivery calendar.",
             ]}

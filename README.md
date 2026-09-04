@@ -94,22 +94,30 @@ Every Morph experience exposes its complete site-owned records, calculations, al
 
 These are not prepared whole-page presets. Components can be added, removed, moved, grouped, sorted, and reconfigured independently. Every tool call visibly changes the webpage, and follow-up calls read the current interface before changing it.
 
+## Using Morph with current browser assistants
+
+Current general-purpose browser assistants do not always infer WebMCP tool use from an ordinary task request. Without a routing cue, an assistant may answer in chat or interpret “make me a decision page” as a request to code a separate website. In a fresh conversation, begin the first request with:
+
+> **Read the current page, then use its WebMCP tools to recompose it—do not build a new site.**
+
+This is a practical cue for today's assistants, not a requirement of the Morph interaction model. Some assistants already discover the page tools without it. Once an assistant has read the page and its WebMCP contract, follow-up requests can be completely natural and do not need the cue again. As browser assistants become better trained to recognise WebMCP-enabled pages, we expect stating the person's goal alone to be enough.
+
 ## Try the collaboration loop
 
-Open [Wayline from a clean start](https://morph.carry-protocol.workers.dev/journeys?fresh=1) with ChatGPT's browser assistant.
+Open [Hearth & Home from a clean start](https://morph.carry-protocol.workers.dev/?fresh=1) with ChatGPT's browser assistant.
 
-> Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.
+> Read the current page, then use its WebMCP tools to recompose it—do not build a new site. I need a washer for a 60 × 62 × 85 cm alcove. I do five loads a week, pay 29p/kWh and 0.4p per litre for water, keep appliances for eight years, and need delivery within four days. Recompose this catalog into a decision page with editable assumptions, a price-versus-noise chart, a shortlist ranked by total ownership cost, and exact exclusions.
 
-On the resulting page, save a train and lock checked luggage. Then ask:
+On the resulting page, shortlist the Elmridge E8 Eco and lock the 62 cm installed depth. Then ask:
 
-> Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.
+> Recompose this as a simple brief for my parents. Put a compact summary of my saved and locked choices first, then one recommendation, the saved washer's exact eight-year cost, plain-language tradeoffs, and a delivery calendar. Preserve my saved washer and locked depth.
 
-The layout and decision model change; the person's saved journey and luggage lock remain.
+The layout and decision model change; the person's saved washer and locked measurement remain. The routing cue is absent from the follow-up because the assistant already knows this page's WebMCP contract.
 
 For the two short generalization proofs:
 
-- [Hearth & Home](https://morph.carry-protocol.workers.dev/?fresh=1): “Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.”
-- [The Current](https://morph.carry-protocol.workers.dev/edition?fresh=1): “Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.”
+- [Wayline](https://morph.carry-protocol.workers.dev/journeys?fresh=1): “Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.”
+- [The Current](https://morph.carry-protocol.workers.dev/edition?fresh=1): “Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.”
 
 ## Implementation
 

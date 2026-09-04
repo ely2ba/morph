@@ -361,7 +361,7 @@ function WaylineHeader({ mcpAvailable }: { mcpAvailable: boolean }) {
           <AssistantPromptPanel
             className="assistant-prompt-wayline"
             prompts={[
-              "Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.",
+              "Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.",
               "Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.",
               "Make it a simple day plan containing only step-free options that reach De Pijp before 7pm.",
             ]}

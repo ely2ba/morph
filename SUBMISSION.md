@@ -62,6 +62,7 @@ Route state persists locally. Revision checks, undo and redo, accessible dialogs
 
 - Making composition genuinely open-ended without allowing model-authored facts or markup.
 - Preserving human-owned state across structurally different follow-up requests.
+- Reliably routing current general-purpose assistants to the page's WebMCP tools; without a one-time cue, some interpret an interface request as a request to build a separate site.
 - Keeping calculations, provenance, zero-result recovery, dialogs, history, and live announcements coherent.
 - Making each composed result feel native to its source website instead of collapsing all three into one generic dashboard.
 - Making dense comparisons and timelines understandable at 390px without unexplained horizontal scrolling.
@@ -79,6 +80,8 @@ Route state persists locally. Revision checks, undo and redo, accessible dialogs
 WebMCP is most powerful when it is treated as an interface-composition contract, not merely another way to invoke isolated actions. The useful boundary is clear: the assistant owns intent and arrangement; the website owns truth and consequences.
 
 We also learned that persistence is part of the interaction model, not a convenience. A recomposed interface only feels collaborative when it acknowledges the decisions a person already made.
+
+Current assistants sometimes need the first request to say explicitly: “Read the current page, then use its WebMCP tools to recompose it—do not build a new site.” That cue is needed only to establish the interaction. Once the page and its tools are in context, follow-ups can remain natural. Some assistants already discover WebMCP without it, and we expect the cue to disappear as WebMCP page discovery becomes a familiar model behaviour.
 
 ## Credible next steps
 
@@ -130,19 +133,19 @@ We also learned that persistence is part of the interaction model, not a conveni
 
 ### Hearth & Home
 
-1. “Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.”
+1. “Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.”
 2. “I measured it: 58 cm deep. Remove the questions, make the remaining products a compact table, and put the quietest machine below £550 first.”
 3. “Replace the table with a simple recommendation for my parents. Show what they sacrifice with each alternative and add a delivery calendar.”
 
 ### Wayline
 
-1. “Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.”
+1. “Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.”
 2. “Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.”
 3. “Now make it a simple day plan containing only step-free options that reach De Pijp before 7pm.”
 
 ### The Current
 
-1. “Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.”
+1. “Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.”
 2. “Replace the edition with a chronological timeline of the tidal-energy story. Include only moments when a new verified fact appeared.”
 3. “Turn the timeline into a provenance map showing who reported each fact first, which publications repeated it, and where the evidence changed.”
 

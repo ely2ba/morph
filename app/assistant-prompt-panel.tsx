@@ -55,12 +55,22 @@ export function AssistantPromptPanel({
         <h2 id="assistant-prompt-title">
           Ask this page to become the interface you need.
         </h2>
+        <p className="assistant-prompt-note">
+          Today’s browser assistants may need one routing cue. The first request
+          tells them to read this page and use its WebMCP tools; follow-ups can
+          stay natural.
+        </p>
         <section aria-labelledby="assistant-prompt-gallery-title">
           <h3 id="assistant-prompt-gallery-title">Things you can ask</h3>
           <div className="assistant-prompt-gallery">
             {prompts.map((prompt, index) => (
               <article key={prompt}>
-                <p>“{prompt}”</p>
+                <div>
+                  <span>
+                    {index === 0 ? "First request" : "Follow-up request"}
+                  </span>
+                  <p>“{prompt}”</p>
+                </div>
                 <button type="button" onClick={() => void copy(prompt, index)}>
                   {copied === index ? (
                     <Check size={15} aria-hidden="true" />

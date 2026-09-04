@@ -10,6 +10,8 @@ Hearth & Home is the one complete, uninterrupted WebMCP demonstration. Wayline a
 
 Keep the real ChatGPT browser assistant visible when the two Hearth & Home requests are sent. Turn off **System Settings → Accessibility → Display → Reduce motion**, close unrelated tabs and notifications, and begin Hearth & Home from its clean-start URL. Keep Send, roughly two seconds of honest assistant activity, and the full site-native transformation; remove only dead latency before the tool call.
 
+The first request includes a short routing cue because current general-purpose assistants may otherwise treat the task as a request to build a separate website. Do not repeat that cue in the follow-up: once the assistant has read the page and its tools, ordinary language is enough.
+
 Before recording the two range proofs, prepare their composed states with the prompts at the end of this document. Record an ordinary clean-start shot and a separate completed shot for each. Do not wait for either assistant call on camera.
 
 ## 0:00–0:14 — Show Morph working immediately
@@ -25,7 +27,7 @@ Before recording the two range proofs, prepare their composed states with the pr
 
 **Exact assistant request**
 
-> I need a washer for a 60 × 62 × 85 cm alcove. I do five loads a week, pay 29p/kWh and 0.4p per litre for water, keep appliances for eight years, and need delivery within four days. Recompose this catalog into a decision page with editable assumptions, a price-versus-noise chart, a shortlist ranked by total ownership cost, and exact exclusions.
+> Read the current page, then use its WebMCP tools to recompose it—do not build a new site. I need a washer for a 60 × 62 × 85 cm alcove. I do five loads a week, pay 29p/kWh and 0.4p per litre for water, keep appliances for eight years, and need delivery within four days. Recompose this catalog into a decision page with editable assumptions, a price-versus-noise chart, a shortlist ranked by total ownership cost, and exact exclusions.
 
 **Narration**
 
@@ -162,11 +164,11 @@ Prepare these before recording their completed shots. Each route stores its stat
 
 **Wayline completed state**
 
-> I’m leaving from Shoreditch and staying in Amsterdam’s Jordaan. Build a complete door-to-door decision interface. Rank these by total time, walking, and missed-connection risk. I care twice as much about reliability as speed, have a checked bag, and need to arrive by 7pm. Show ranked options and a timeline that separates travel, waiting, terminal buffers, walking, luggage, and transfers.
+> Read the current page, then use its WebMCP tools to recompose it—do not build a new site. I’m leaving from Shoreditch and staying in Amsterdam’s Jordaan. Build a complete door-to-door decision interface. Rank these by total time, walking, and missed-connection risk. I care twice as much about reliability as speed, have a checked bag, and need to arrive by 7pm. Show ranked options and a timeline that separates travel, waiting, terminal buffers, walking, luggage, and transfers.
 
 **The Current completed state**
 
-> Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.
+> Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.
 
 ## Editing rules
 

@@ -334,7 +334,7 @@ function CurrentHeader({ mcpAvailable }: { mcpAvailable: boolean }) {
           <AssistantPromptPanel
             className="assistant-prompt-current"
             prompts={[
-              'Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.',
+              'Read the current page, then use its WebMCP tools to recompose it—do not build a new site. Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.',
               'Replace the edition with a chronological timeline of the tidal-energy story. Include only moments when a new verified fact appeared.',
               'Turn the timeline into a provenance map showing who reported each fact first, which publications repeated it, and where the evidence changed.',
             ]}
