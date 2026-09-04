@@ -117,18 +117,61 @@ export type ComponentParseOptions = {
   allowedRecordIds?: readonly string[];
   allowedAssumptionIds?: readonly string[];
   allowedGroupIds?: readonly string[];
+  allowedVariantsByType?: Readonly<
+    Record<string, readonly ComponentVariant[]>
+  >;
   maximumRecords?: number;
+  supportedFields?: readonly NativeComponentFieldId[];
+  supportedFieldsByType?: Readonly<
+    Record<string, readonly NativeComponentFieldId[]>
+  >;
 };
 
 export type NativeComponentPatch = Partial<Omit<NativeComponent, 'id'>>;
+
+export type NativeComponentFieldId =
+  | 'heading'
+  | 'variant'
+  | 'metric_ids'
+  | 'record_ids'
+  | 'assumption_ids'
+  | 'group_by'
+  | 'sort_metric_id'
+  | 'sort_direction'
+  | 'emphasized_record_ids'
+  | 'emphasized_metric_ids'
+  | 'width'
+  | 'limit'
+  | 'delay_minutes'
+  | 'show_only_differences';
 
 export type ComponentSchemaOptions = Pick<
   ComponentParseOptions,
   | 'allowedRecordIds'
   | 'allowedAssumptionIds'
   | 'allowedGroupIds'
+  | 'allowedVariantsByType'
   | 'maximumRecords'
+  | 'supportedFields'
+  | 'supportedFieldsByType'
 >;
+
+const componentFieldAliases: Record<NativeComponentFieldId, string[]> = {
+  heading: ['heading'],
+  variant: ['variant'],
+  metric_ids: ['metric_ids', 'metricIds'],
+  record_ids: ['record_ids', 'recordIds'],
+  assumption_ids: ['assumption_ids', 'assumptionIds'],
+  group_by: ['group_by', 'groupBy'],
+  sort_metric_id: ['sort_metric_id', 'sortMetricId'],
+  sort_direction: ['sort_direction', 'sortDirection'],
+  emphasized_record_ids: ['emphasized_record_ids', 'emphasizedRecordIds'],
+  emphasized_metric_ids: ['emphasized_metric_ids', 'emphasizedMetricIds'],
+  width: ['width'],
+  limit: ['limit'],
+  delay_minutes: ['delay_minutes', 'delayMinutes'],
+  show_only_differences: ['show_only_differences', 'showOnlyDifferences'],
+};
 
 const componentIdPattern = /^[a-z][a-z0-9_-]{0,39}$/;
 
@@ -172,6 +215,21 @@ export function parseNativeComponent(
     );
   if (!options.allowedTypes.includes(type))
     throw new Error(`Unsupported component type “${type}”.`);
+  const supportedFields = options.supportedFieldsByType
+    ? (options.supportedFieldsByType[type] ?? [])
+    : options.supportedFields;
+  if (supportedFields) {
+    const allowedKeys = new Set([
+      'id',
+      'type',
+      ...supportedFields.flatMap((field) => componentFieldAliases[field]),
+    ]);
+    const unsupported = Object.keys(raw).find((key) => !allowedKeys.has(key));
+    if (unsupported)
+      throw new Error(
+        `Component field “${unsupported}” is not supported by ${type}.`,
+      );
+  }
 
   const component: NativeComponent = { id, type };
   if (raw.heading != null) {
@@ -188,7 +246,9 @@ export function parseNativeComponent(
     if (typeof raw.variant !== 'string')
       throw new Error('Component variant must be a supported ID.');
     const variant = raw.variant as ComponentVariant;
-    if (!componentVariants.includes(variant))
+    const allowedVariants =
+      options.allowedVariantsByType?.[type] ?? componentVariants;
+    if (!allowedVariants.includes(variant))
       throw new Error(`Unsupported component variant “${variant}”.`);
     component.variant = variant;
   }
@@ -475,95 +535,144 @@ export function nativeComponentInputSchema(
   const groupIdSchema = options.allowedGroupIds
     ? { type: 'string', enum: options.allowedGroupIds }
     : { type: 'string' };
-  return {
-    type: 'object',
-    properties: {
-      id: {
-        type: 'string',
-        pattern: '^[a-z][a-z0-9_-]{0,39}$',
-      },
-      type: { type: 'string', enum: allowedTypes },
-      heading: {
-        type: 'string',
-        minLength: 1,
-        maxLength: 80,
-        pattern: '^[^<>\\r\\n]+$',
-      },
-      variant: { type: 'string', enum: componentVariants },
-      metric_ids: {
-        type: 'array',
-        maxItems: 12,
-        uniqueItems: true,
-        items: { type: 'string', enum: allowedMetricIds },
-      },
-      record_ids: {
-        type: 'array',
-        maxItems: options.maximumRecords ?? 30,
-        uniqueItems: true,
-        items: recordIdSchema,
-      },
-      assumption_ids: {
-        type: 'array',
-        maxItems: 20,
-        uniqueItems: true,
-        items: assumptionIdSchema,
-      },
-      group_by: {
-        ...groupIdSchema,
-        description:
-          'Site-defined grouping for this component; use none for an ungrouped view.',
-      },
-      sort_metric_id: {
-        type: 'string',
-        enum: allowedMetricIds,
-        description: 'Site-defined metric used to sort this component.',
-      },
-      sort_direction: {
-        type: 'string',
-        enum: ['asc', 'desc'],
-        description: 'Direction for sort_metric_id.',
-      },
-      emphasized_record_ids: {
-        type: 'array',
-        maxItems: options.maximumRecords ?? 30,
-        uniqueItems: true,
-        items: recordIdSchema,
-        description:
-          'Site-owned records to emphasize without hiding other records.',
-      },
-      emphasized_metric_ids: {
-        type: 'array',
-        maxItems: 12,
-        uniqueItems: true,
-        items: { type: 'string', enum: allowedMetricIds },
-        description:
-          'Site-owned metrics to emphasize without hiding other metrics.',
-      },
-      width: { type: 'string', enum: ['full', 'half'] },
-      limit: { type: 'integer', minimum: 1, maximum: 30 },
-      delay_minutes: { type: 'integer', minimum: 0, maximum: 180 },
-      show_only_differences: { type: 'boolean' },
+  const allProperties = {
+    id: {
+      type: 'string',
+      pattern: '^[a-z][a-z0-9_-]{0,39}$',
     },
-    required: ['id', 'type'],
-    dependentRequired: {
-      sort_metric_id: ['sort_direction'],
-      sort_direction: ['sort_metric_id'],
+    type: { type: 'string', enum: allowedTypes },
+    heading: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 80,
+      pattern: '^[^<>\\r\\n]+$',
     },
-    additionalProperties: false,
+    variant: { type: 'string', enum: componentVariants },
+    metric_ids: {
+      type: 'array',
+      maxItems: 12,
+      uniqueItems: true,
+      items: { type: 'string', enum: allowedMetricIds },
+    },
+    record_ids: {
+      type: 'array',
+      maxItems: options.maximumRecords ?? 30,
+      uniqueItems: true,
+      items: recordIdSchema,
+    },
+    assumption_ids: {
+      type: 'array',
+      maxItems: 20,
+      uniqueItems: true,
+      items: assumptionIdSchema,
+    },
+    group_by: {
+      ...groupIdSchema,
+      description:
+        'Site-defined grouping for this component; use none for an ungrouped view.',
+    },
+    sort_metric_id: {
+      type: 'string',
+      enum: allowedMetricIds,
+      description: 'Site-defined metric used to sort this component.',
+    },
+    sort_direction: {
+      type: 'string',
+      enum: ['asc', 'desc'],
+      description: 'Direction for sort_metric_id.',
+    },
+    emphasized_record_ids: {
+      type: 'array',
+      maxItems: options.maximumRecords ?? 30,
+      uniqueItems: true,
+      items: recordIdSchema,
+      description:
+        'Site-owned records to emphasize without hiding other records.',
+    },
+    emphasized_metric_ids: {
+      type: 'array',
+      maxItems: 12,
+      uniqueItems: true,
+      items: { type: 'string', enum: allowedMetricIds },
+      description:
+        'Site-owned metrics to emphasize without hiding other metrics.',
+    },
+    width: { type: 'string', enum: ['full', 'half'] },
+    limit: { type: 'integer', minimum: 1, maximum: 30 },
+    delay_minutes: { type: 'integer', minimum: 0, maximum: 180 },
+    show_only_differences: { type: 'boolean' },
   };
+  const schemaFor = (
+    type: string | null,
+    supportedFields: readonly NativeComponentFieldId[] | undefined,
+  ) => {
+    const properties = Object.fromEntries(
+      Object.entries(allProperties)
+        .filter(
+          ([field]) =>
+            field === 'id' ||
+            field === 'type' ||
+            !supportedFields ||
+            supportedFields.includes(field as NativeComponentFieldId),
+        )
+        .map(([field, schema]) => {
+          if (field === 'type' && type) return [field, { const: type }];
+          if (field === 'variant' && type)
+            return [
+              field,
+              {
+                type: 'string',
+                enum:
+                  options.allowedVariantsByType?.[type] ?? componentVariants,
+              },
+            ];
+          return [field, schema];
+        }),
+    );
+    const supportsSort =
+      !supportedFields ||
+      (supportedFields.includes('sort_metric_id') &&
+        supportedFields.includes('sort_direction'));
+    return {
+      type: 'object',
+      properties,
+      required: ['id', 'type'],
+      ...(supportsSort
+        ? {
+            dependentRequired: {
+              sort_metric_id: ['sort_direction'],
+              sort_direction: ['sort_metric_id'],
+            },
+          }
+        : {}),
+      additionalProperties: false,
+    };
+  };
+  if (options.supportedFieldsByType)
+    return {
+      oneOf: allowedTypes.map((type) =>
+        schemaFor(type, options.supportedFieldsByType?.[type] ?? []),
+      ),
+    };
+  return schemaFor(null, options.supportedFields);
 }
 
 export function compositionOperationSchemas(componentSchema: object) {
   const schema = componentSchema as {
     properties?: Record<string, unknown>;
+    oneOf?: Array<{ properties?: Record<string, unknown> }>;
   };
-  const { id: _id, ...patchProperties } = schema.properties ?? {};
-  const componentPatchSchema = {
-    type: 'object',
-    properties: patchProperties,
-    minProperties: 1,
-    additionalProperties: false,
-  };
+  const patchSchemas = (schema.oneOf ?? [schema]).map((item) => {
+    const { id: _id, ...patchProperties } = item.properties ?? {};
+    return {
+      type: 'object',
+      properties: patchProperties,
+      minProperties: 1,
+      additionalProperties: false,
+    };
+  });
+  const componentPatchSchema =
+    patchSchemas.length === 1 ? patchSchemas[0] : { anyOf: patchSchemas };
   const componentIdSchema = {
     type: 'string',
     pattern: '^[a-z][a-z0-9_-]{0,39}$',
@@ -628,7 +737,7 @@ export function compositionOperationSchemas(componentSchema: object) {
         operation: { const: 'configure_component' },
         component_id: componentIdSchema,
         component: {
-          oneOf: [componentPatchSchema, componentSchema],
+          ...componentPatchSchema,
           description:
             'Settings to merge into the target component. The component ID is not repeated.',
         },

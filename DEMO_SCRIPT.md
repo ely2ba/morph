@@ -31,13 +31,13 @@ Before recording:
 
 **Exact prompt:**
 
-> I’m leaving from Shoreditch and staying in Amsterdam’s Jordaan. Build a complete door-to-door decision interface. Rank these by total time, walking, and missed-connection risk. I care twice as much about reliability as speed, have a checked bag, and need to arrive by 7pm. Show a timeline that separates travel, waiting, terminal buffers, walking, luggage, and transfers.
+> I’m leaving from Shoreditch and staying in Amsterdam’s Jordaan. Build a complete door-to-door decision interface. Rank these by total time, walking, and missed-connection risk. I care twice as much about reliability as speed, have a checked bag, and need to arrive by 7pm. Keep my trip assumptions directly editable at the top so I can lock them. Show ranked options and a timeline that separates travel, waiting, terminal buffers, walking, luggage, and transfers.
 
 **Narration:**
 
 > “Instead of working through filters, I ask the browser assistant for the interface I need.”
 
-**Transformation pause:** After sending, leave the ordinary results visible. Do not move or scroll while Wayline shows “Rebuilding 18 results around the whole journey…” and reorganises the page. Let the focused result heading remain on screen for two seconds after the transition completes.
+**Transformation pause:** After sending, leave the ordinary results visible. Do not move or scroll while Wayline moves through “Reading 18 journeys,” “Calculating total time and connection risk,” and “Composing your journey view.” Let the focused result heading remain on screen for two seconds after the transition completes.
 
 ## 0:25–0:40 — Reveal the complete journey
 
@@ -79,7 +79,7 @@ Before recording:
 
 **Exact prompt:**
 
-> I’m staying in De Pijp now. Turn this into a delay stress test and show the day as a timeline. Keep my saved train and locked luggage.
+> I’m staying in De Pijp now. Turn this into a delay stress test and chronological day timeline. Keep a compact summary of my saved and locked choices visible. Preserve my saved train and locked luggage.
 
 **Transformation pause:** Keep the current interface visible while the affected components rearrange. Do not scroll during the transition. After completion, hold on the new timeline for two seconds.
 
@@ -109,7 +109,7 @@ Before recording:
 
 > I need a washer for a 60 × 62 × 85 cm alcove. I do five loads a week, pay 29p/kWh and 0.4p per litre for water, and keep appliances for eight years. Compose a decision summary, assumptions, cost-versus-noise chart, ranked shortlist, and comparison. Exclude anything that will not fit or arrive within four days.
 
-**Transformation pause:** Do not scroll while Hearth & Home shows “Checking 28 machines against your home…” and composes the workspace. Pause after “9 fit.” appears.
+**Transformation pause:** Do not scroll while Hearth & Home moves through “Reading 28 machines,” “Calculating fit and true cost,” and “Composing your decision view.” Pause after “9 fit.” appears.
 
 **Narration:**
 
@@ -139,7 +139,7 @@ Before recording:
 
 > Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.
 
-**Transformation pause:** Hold the ordinary feed while The Current shows “Collapsing 30 headlines into new developments…” and composes the edition. Pause on “5 developments · 9m 48s.” Then open a visible coverage comparison or provenance control.
+**Transformation pause:** Hold the ordinary feed while The Current moves through “Reading 30 reports,” “Clustering repeated coverage and verified facts,” and “Composing your finite edition.” Pause on “5 developments · 9m 48s.” Then open a visible coverage comparison or provenance control.
 
 **Narration:**
 

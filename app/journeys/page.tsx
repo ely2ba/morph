@@ -55,6 +55,10 @@ import {
 } from "@/lib/journey-webmcp";
 import { AssistantPromptPanel } from "@/app/assistant-prompt-panel";
 import {
+  playMorphStatusPhases,
+  runMorphSurfaceTransition,
+} from "@/app/morph-transition";
+import {
   configureComponent,
   insertComponent,
   journeyComponentTypes,
@@ -726,12 +730,52 @@ function JourneyControls({
   );
 }
 
+function SavedJourneyMark({ saved }: { saved: boolean }) {
+  if (!saved) return null;
+  return (
+    <span className="wl-saved-mark">
+      <Save size={11} aria-hidden="true" />
+      Saved
+    </span>
+  );
+}
+
+function WaylineHumanState({ state }: { state: AppState }) {
+  const luggageLocked = state.locked.includes("checked_bag");
+  return (
+    <div
+      className="wl-human-state"
+      aria-label={`${state.saved.length} saved, ${state.locked.length} locked`}
+    >
+      <span>
+        <Save size={12} aria-hidden="true" />
+        {state.saved.length} saved
+      </span>
+      <span>
+        <Lock size={12} aria-hidden="true" />
+        {state.locked.length} locked
+      </span>
+      {luggageLocked && (
+        <strong>
+          <Briefcase size={12} aria-hidden="true" />
+          {state.view?.assumptions.checked_bag
+            ? "Checked bag"
+            : "Carry-on only"}
+          <em>Locked</em>
+        </strong>
+      )}
+    </div>
+  );
+}
+
 function JourneyPlot({
   rows,
   onExplain,
+  savedIds,
 }: {
   rows: JourneyEvaluation[];
   onExplain: (id: string) => void;
+  savedIds: string[];
 }) {
   if (!rows.length) return null;
   const width = 780,
@@ -801,31 +845,35 @@ function JourneyPlot({
               </text>
             </g>
           ))}
-          {rows.map((row) => (
-            <a
-              key={row.journey.id}
-              href={`#${row.journey.id}`}
-              className={`wl-plot-point ${row.rank === 1 ? "best" : ""}`}
-              aria-label={`${row.journey.operator}, ${formatDuration(row.totalMinutes)}, ${row.riskPercent.toFixed(1)} percent risk`}
-              onClick={(event) => {
-                event.preventDefault();
-                onExplain(row.journey.id);
-              }}
-            >
-              <circle
-                cx={x(row.totalMinutes)}
-                cy={y(row.riskPercent)}
-                r={row.rank === 1 ? 11 : 8}
-              />
-              <text
-                x={x(row.totalMinutes)}
-                y={y(row.riskPercent) - 14}
-                textAnchor="middle"
+          {rows.map((row) => {
+            const saved = savedIds.includes(row.journey.id);
+            return (
+              <a
+                key={row.journey.id}
+                href={`#${row.journey.id}`}
+                className={`wl-plot-point ${row.rank === 1 ? "best" : ""} ${saved ? "saved" : ""}`}
+                aria-label={`${row.journey.operator}, ${formatDuration(row.totalMinutes)}, ${row.riskPercent.toFixed(1)} percent risk${saved ? ", Saved" : ""}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onExplain(row.journey.id);
+                }}
               >
-                {row.journey.service}
-              </text>
-            </a>
-          ))}
+                <circle
+                  cx={x(row.totalMinutes)}
+                  cy={y(row.riskPercent)}
+                  r={row.rank === 1 ? 11 : 8}
+                />
+                <text
+                  x={x(row.totalMinutes)}
+                  y={y(row.riskPercent) - 14}
+                  textAnchor="middle"
+                >
+                  {row.journey.service}
+                  {saved ? " · Saved" : ""}
+                </text>
+              </a>
+            );
+          })}
           <text
             className="wl-axis-label"
             x={width / 2}
@@ -935,6 +983,7 @@ function JourneyCard({
           {row.rank === 1
             ? "Best match for your balance"
             : `#${row.rank} for your balance`}
+          <SavedJourneyMark saved={saved} />
         </span>
         <strong>
           {journey.operator} · {journey.service}
@@ -1270,6 +1319,9 @@ function JourneyComparison({
                   </button>
                   <span>{row.journey.operator}</span>
                   <strong>{row.journey.service}</strong>
+                  <SavedJourneyMark
+                    saved={state.saved.includes(row.journey.id)}
+                  />
                   <em>
                     {formatClock(row.journey.departureMinute)} · £
                     {row.journey.fare}
@@ -1443,6 +1495,7 @@ function DecisionPage({
             The booked journey is only one part of getting there. Wayline now
             ranks the complete trip.
           </p>
+          <WaylineHumanState state={state} />
         </div>
         <div className="wl-history">
           <button type="button" onClick={undo} disabled={!state.past.length}>
@@ -1467,6 +1520,11 @@ function DecisionPage({
         <span>
           <Briefcase size={14} />
           {view.assumptions.checked_bag ? "Checked bag" : "Carry-on only"}
+          {state.locked.includes("checked_bag") && (
+            <>
+              <Lock size={12} /> Locked
+            </>
+          )}
         </span>
         <span>
           <CalendarClock size={14} />
@@ -1568,6 +1626,7 @@ function DecisionPage({
         <>
           <JourneyPlot
             rows={result.ranked}
+            savedIds={state.saved}
             onExplain={(id) => openCalculation(id, "door_to_door_time")}
           />
           <section className="wl-ranked" id="results">
@@ -1738,11 +1797,13 @@ function journeyRowsForComponent(
 function JourneyTimelineBlock({
   rows,
   view,
+  savedIds,
   delayMinutes = 0,
   simple = false,
 }: {
   rows: JourneyEvaluation[];
   view: JourneyView;
+  savedIds: string[];
   delayMinutes?: number;
   simple?: boolean;
 }) {
@@ -1756,6 +1817,7 @@ function JourneyTimelineBlock({
               <div>
                 <span>{row.journey.operator}</span>
                 <h3>{row.journey.service}</h3>
+                <SavedJourneyMark saved={savedIds.includes(row.journey.id)} />
               </div>
               <div>
                 <strong>{formatClock(delayedArrival)}</strong>
@@ -1804,10 +1866,12 @@ function JourneyStressTable({
   rows,
   delayMinutes,
   view,
+  savedIds,
 }: {
   rows: JourneyEvaluation[];
   delayMinutes: number;
   view: JourneyView;
+  savedIds: string[];
 }) {
   return (
     <div className="wl-table-shell">
@@ -1839,6 +1903,9 @@ function JourneyStressTable({
                 <tr key={row.journey.id}>
                   <th>
                     {row.journey.operator} · {row.journey.service}
+                    <SavedJourneyMark
+                      saved={savedIds.includes(row.journey.id)}
+                    />
                   </th>
                   <td>{formatClock(row.arrivalMinute)}</td>
                   <td>{formatClock(row.arrivalMinute + delayMinutes)}</td>
@@ -1955,7 +2022,9 @@ function ComposedJourneyPage({
             {state.locked.map((id) => (
               <span key={id}>
                 <Lock size={13} />
-                {id.replaceAll("_", " ")}
+                {id === "checked_bag"
+                  ? `${view.assumptions.checked_bag ? "Checked bag" : "Carry-on only"} locked`
+                  : `${id.replaceAll("_", " ")} locked`}
               </span>
             ))}
           </div>
@@ -2064,6 +2133,7 @@ function ComposedJourneyPage({
           <JourneyTimelineBlock
             rows={rows}
             view={view}
+            savedIds={state.saved}
             delayMinutes={component.delayMinutes ?? 0}
             simple={component.variant === "simple"}
           />
@@ -2089,7 +2159,12 @@ function ComposedJourneyPage({
             </div>
             <strong>+{delay} min</strong>
           </div>
-          <JourneyStressTable rows={allRows} delayMinutes={delay} view={view} />
+          <JourneyStressTable
+            rows={allRows}
+            delayMinutes={delay}
+            view={view}
+            savedIds={state.saved}
+          />
         </>,
       );
     }
@@ -2108,6 +2183,7 @@ function ComposedJourneyPage({
             rows={component.recordIds?.length ? rows : result.all}
             delayMinutes={0}
             view={view}
+            savedIds={state.saved}
           />
         </>,
       );
@@ -2119,6 +2195,7 @@ function ComposedJourneyPage({
           </h2>
           <JourneyPlot
             rows={rows}
+            savedIds={state.saved}
             onExplain={(id) => openCalculation(id, "door_to_door_time")}
           />
         </>,
@@ -2225,7 +2302,12 @@ function ComposedJourneyPage({
             </div>
             <strong>{planRows.length} options</strong>
           </div>
-          <JourneyTimelineBlock rows={planRows} view={view} simple />
+          <JourneyTimelineBlock
+            rows={planRows}
+            view={view}
+            savedIds={state.saved}
+            simple
+          />
         </>,
       );
     }
@@ -2335,6 +2417,9 @@ function ComposedJourneyPage({
                 >
                   <span>
                     {row.journey.operator} · {row.journey.service}
+                    <SavedJourneyMark
+                      saved={state.saved.includes(row.journey.id)}
+                    />
                   </span>
                   <strong>{row.reasons.join(" · ")}</strong>
                 </button>
@@ -2397,6 +2482,7 @@ function ComposedJourneyPage({
             Wayline keeps every schedule and calculation authoritative while the
             interface changes around this journey.
           </p>
+          <WaylineHumanState state={state} />
         </div>
         <div className="wl-history">
           <button
@@ -2454,6 +2540,7 @@ function ComposedJourneyPage({
             )
             .map((row) => (
               <p key={row.journey.id}>
+                <SavedJourneyMark saved />
                 <strong>
                   {row.journey.operator} {row.journey.service}
                 </strong>{" "}
@@ -2484,12 +2571,14 @@ export default function JourneysPage() {
   const [hydrated, setHydrated] = useState(false);
   const [mcpAvailable, setMcpAvailable] = useState(false);
   const [building, setBuilding] = useState<{
-    phase: "working" | "result";
-    count?: number;
+    label: string;
+    fromCount: number;
+    toCount: number;
   } | null>(null);
-  const [recomposing, setRecomposing] = useState(false);
   const [liveMessage, setLiveMessage] = useState("");
   const stateRef = useRef(state);
+  const transitionRootRef = useRef<HTMLDivElement>(null);
+  const transitionSurfaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -2790,15 +2879,28 @@ export default function JourneysPage() {
       abortIfNeeded(signal);
       const createdCount = evaluateJourneys(proposed, current.hidden).ranked
         .length;
-      const reduceMotion = matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
-      setBuilding({ phase: "working" });
-      if (!reduceMotion)
-        await new Promise((resolve) => setTimeout(resolve, 650));
-      setBuilding({ phase: "result", count: createdCount });
-      if (!reduceMotion)
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      const firstTransformation = !current.view;
+      if (firstTransformation) {
+        try {
+          await playMorphStatusPhases(
+            [
+              `Reading ${journeys.length} journeys`,
+              "Calculating total time and connection risk",
+              "Composing your journey view",
+            ],
+            (label) =>
+              setBuilding({
+                label,
+                fromCount: journeys.length,
+                toCount: createdCount,
+              }),
+            signal,
+          );
+        } catch (error) {
+          setBuilding(null);
+          throw error;
+        }
+      }
       abortIfNeeded(signal);
       if (stateRef.current.revision !== current.revision) {
         setBuilding(null);
@@ -2808,17 +2910,30 @@ export default function JourneysPage() {
           { current_revision: stateRef.current.revision },
         );
       }
-      const next = commit((present) => ({
-        ...present,
-        view: proposed,
-        calculation: null,
-      }));
-      setBuilding(null);
+      let next = current;
+      try {
+        await runMorphSurfaceTransition({
+          root: transitionRootRef.current,
+          live: transitionSurfaceRef.current,
+          kind: firstTransformation ? "create" : "update",
+          signal,
+          apply: () => {
+            next = commit((present) => ({
+              ...present,
+              view: proposed,
+              calculation: null,
+            }));
+          },
+        });
+      } finally {
+        setBuilding(null);
+      }
       setLiveMessage(`${createdCount} qualify.`);
       history.replaceState({ journey: false }, "");
       history.pushState({ journey: true }, "");
-      await delayPaint();
-      document.getElementById("wl-decision-heading")?.focus();
+      document
+        .getElementById("wl-decision-heading")
+        ?.focus({ preventScroll: true });
       const evaluated = evaluateJourneys(proposed, next.hidden);
       return jsonSafe({
         ok: true,
@@ -3113,20 +3228,24 @@ export default function JourneysPage() {
           changed_controls: [],
           current_composition: serializeComposition(draft.composition),
         });
-      setRecomposing(true);
-      const next = commit((present) => ({
-        ...present,
-        view: draft,
-        locked,
-        saved,
-        hidden,
-        compared,
-        comparisonRows: compared.length < 2 ? null : present.comparisonRows,
-      }));
-      await delayPaint();
-      if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
-        await new Promise((resolve) => setTimeout(resolve, 420));
-      setRecomposing(false);
+      let next = current;
+      await runMorphSurfaceTransition({
+        root: transitionRootRef.current,
+        live: transitionSurfaceRef.current,
+        kind: "update",
+        signal,
+        apply: () => {
+          next = commit((present) => ({
+            ...present,
+            view: draft,
+            locked,
+            saved,
+            hidden,
+            compared,
+            comparisonRows: compared.length < 2 ? null : present.comparisonRows,
+          }));
+        },
+      });
       setLiveMessage(
         `Journey page recomposed. ${evaluateJourneys(draft, hidden).ranked.length} journeys qualify.`,
       );
@@ -3294,42 +3413,47 @@ export default function JourneysPage() {
 
   if (!hydrated) return <div className="wl-hydration-shell" aria-busy="true" />;
   return (
-    <div
-      className={`wayline-app${building ? " is-building" : ""}${recomposing ? " is-recomposing" : ""}`}
-    >
+    <div className={`wayline-app${building ? " is-building" : ""}`}>
       <WaylineHeader mcpAvailable={mcpAvailable} />
       <div className="sr-only" aria-live="polite">
         {liveMessage}
       </div>
       {building && (
         <output className="wl-building">
-          <span />
-          {building.phase === "working"
-            ? "Rebuilding 18 results around the whole journey…"
-            : `${building.count ?? 0} qualify.`}
+          <i aria-hidden="true" />
+          <span className="morph-status-label" key={building.label}>
+            {building.label}
+          </span>
+          <strong>
+            {building.fromCount} → {building.toCount} journeys
+          </strong>
         </output>
       )}
-      {state.view?.composition?.length ? (
-        <ComposedJourneyPage
-          state={state}
-          commit={commit}
-          replaceTransient={replaceTransient}
-          undo={undo}
-          redo={redo}
-          announce={setLiveMessage}
-        />
-      ) : state.view ? (
-        <DecisionPage
-          state={state}
-          commit={commit}
-          replaceTransient={replaceTransient}
-          undo={undo}
-          redo={redo}
-          announce={setLiveMessage}
-        />
-      ) : (
-        <StandardPage />
-      )}
+      <div className="morph-transition-root" ref={transitionRootRef}>
+        <div className="morph-transition-live" ref={transitionSurfaceRef}>
+          {state.view?.composition?.length ? (
+            <ComposedJourneyPage
+              state={state}
+              commit={commit}
+              replaceTransient={replaceTransient}
+              undo={undo}
+              redo={redo}
+              announce={setLiveMessage}
+            />
+          ) : state.view ? (
+            <DecisionPage
+              state={state}
+              commit={commit}
+              replaceTransient={replaceTransient}
+              undo={undo}
+              redo={redo}
+              announce={setLiveMessage}
+            />
+          ) : (
+            <StandardPage />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,8 @@
-import type { NativeComponent } from './composition';
+import type {
+  ComponentVariant,
+  NativeComponent,
+  NativeComponentFieldId,
+} from './composition';
 
 export type TopicId =
   | 'uk'
@@ -19,6 +23,75 @@ export type ArticleRole =
   | 'rewrite'
   | 'background';
 export type BackgroundMode = 'omit' | 'include_free' | 'include_counted';
+
+export const editionComponentMetricIds = [
+  'reading_time',
+  'novel_facts',
+  'original_reporting',
+  'publication_order',
+  'topic',
+] as const;
+
+export type EditionComponentMetricId =
+  (typeof editionComponentMetricIds)[number];
+
+export const editionComponentFields = [
+  'heading',
+  'variant',
+  'record_ids',
+  'sort_metric_id',
+  'sort_direction',
+  'width',
+  'limit',
+] as const;
+
+const editionBaseComponentFields = ['heading', 'width'] as const;
+export const editionComponentFieldsByType: Readonly<
+  Record<string, readonly NativeComponentFieldId[]>
+> = {
+  decision_summary: editionBaseComponentFields,
+  assumptions: ['width'],
+  metric_strip: editionBaseComponentFields,
+  finite_edition: [
+    ...editionBaseComponentFields,
+    'record_ids',
+    'sort_metric_id',
+    'sort_direction',
+    'limit',
+  ],
+  chronological_timeline: [
+    ...editionBaseComponentFields,
+    'record_ids',
+    'variant',
+  ],
+  provenance_map: [...editionBaseComponentFields, 'record_ids'],
+  repeated_coverage: [...editionBaseComponentFields, 'record_ids'],
+  disagreement_board: editionBaseComponentFields,
+  reading_queue: [
+    ...editionBaseComponentFields,
+    'record_ids',
+    'sort_metric_id',
+    'sort_direction',
+    'limit',
+  ],
+  topic_dashboard: editionBaseComponentFields,
+  comparison: editionBaseComponentFields,
+  selection_explanation: editionBaseComponentFields,
+  background_material: [
+    ...editionBaseComponentFields,
+    'record_ids',
+    'variant',
+  ],
+  checklist: editionBaseComponentFields,
+  relaxations: editionBaseComponentFields,
+};
+
+export const editionComponentVariantsByType: Readonly<
+  Record<string, readonly ComponentVariant[]>
+> = {
+  chronological_timeline: ['default', 'new_only'],
+  background_material: ['default', 'new_only'],
+};
 
 export type EventFact = { id: string; text: string };
 export type StoryCluster = {

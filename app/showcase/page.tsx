@@ -1,6 +1,5 @@
 import { ArrowDown, ArrowRight, ExternalLink } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { CopyRequestButton } from "./copy-request-button";
 
 type ShowcaseProof = {
@@ -159,6 +158,12 @@ const mobileProofs = [
   },
 ];
 
+const experienceRoutes = [
+  { href: "/?fresh=1", label: "Hearth & Home" },
+  { href: "/journeys?fresh=1", label: "Wayline" },
+  { href: "/edition?fresh=1", label: "The Current" },
+];
+
 function ScreenshotFrame({
   src,
   label,
@@ -245,7 +250,7 @@ function ProofSection({
             <p className="ysw-kicker">Things you can ask</p>
             <h3>One page. More than one useful shape.</h3>
           </div>
-          <Link
+          <a
             className="ysw-open-link"
             href={proof.cleanHref}
             target="_blank"
@@ -253,7 +258,7 @@ function ProofSection({
           >
             {proof.cleanLabel}
             <ExternalLink size={16} aria-hidden="true" />
-          </Link>
+          </a>
         </div>
 
         <div className="ysw-request-grid">
@@ -457,9 +462,11 @@ export default function ShowcasePage() {
             <p>The page becomes the interface you need.</p>
           </div>
           <nav aria-label="Open the live experiences">
-            <Link href="/?fresh=1">Hearth &amp; Home</Link>
-            <Link href="/journeys?fresh=1">Wayline</Link>
-            <Link href="/edition?fresh=1">The Current</Link>
+            {experienceRoutes.map((route) => (
+              <a key={route.href} href={route.href}>
+                {route.label}
+              </a>
+            ))}
             <a
               href="https://github.com/ely2ba/morph"
               target="_blank"

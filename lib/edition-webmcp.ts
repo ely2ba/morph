@@ -1,6 +1,10 @@
 import {
   articles,
   clusters,
+  editionComponentFields,
+  editionComponentFieldsByType,
+  editionComponentMetricIds,
+  editionComponentVariantsByType,
   type BackgroundMode,
   type MinimumId,
   type TopicId,
@@ -8,7 +12,6 @@ import {
 import {
   compositionOperationSchemas,
   editionComponentTypes,
-  editionGroupingIds,
   nativeComponentInputSchema,
 } from './composition';
 
@@ -63,13 +66,7 @@ const editionRecordIds = [
 ];
 const componentSchema = nativeComponentInputSchema(
   editionComponentTypes,
-  [
-    'reading_time',
-    'novel_facts',
-    'original_reporting',
-    'publication_order',
-    'topic',
-  ],
+  editionComponentMetricIds,
   {
     allowedRecordIds: editionRecordIds,
     allowedAssumptionIds: [
@@ -79,8 +76,10 @@ const componentSchema = nativeComponentInputSchema(
       'original_reporting_weight',
       'background_mode',
     ],
-    allowedGroupIds: editionGroupingIds,
     maximumRecords: editionRecordIds.length,
+    supportedFields: editionComponentFields,
+    supportedFieldsByType: editionComponentFieldsByType,
+    allowedVariantsByType: editionComponentVariantsByType,
   },
 );
 const mutableAnnotations = {
@@ -116,7 +115,7 @@ function definitions(handlers: EditionWebMcpHandlers): ToolDefinition[] {
       name: 'create_edition',
       title: 'Create a finite news edition',
       description:
-        'Turn the conventional Current homepage into a finite source-preserving edition. Components can independently select facts and metrics, group coverage, set their own sort, and emphasize supported stories, articles or metrics. The site alone clusters coverage, chooses verified facts, preserves original reporting, enforces topic minimums, calculates reading time, and renders the result. No caller-authored summaries, claims, HTML, formulas, or URLs are accepted.',
+        'Turn the conventional Current homepage into a finite source-preserving edition. Components can independently focus supported records, set their own sort and limit, and choose a supported native presentation. The site alone clusters coverage, chooses verified facts, preserves original reporting, enforces topic minimums, calculates reading time, and renders the result. No caller-authored summaries, claims, HTML, formulas, or URLs are accepted.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -155,7 +154,7 @@ function definitions(handlers: EditionWebMcpHandlers): ToolDefinition[] {
       name: 'update_edition',
       title: 'Update the current edition',
       description:
-        'Recompose The Current in place or apply safe editorial controls. Native components can be replaced, added, removed, moved, grouped, sorted and emphasized independently. configure_component accepts only the settings to change; do not repeat its component ID inside the patch. Call read_page first. Human topic locks, field locks, pinned developments and hidden publications remain protected unless their exact semantic operation is requested.',
+        'Recompose The Current in place or apply safe editorial controls. Native components can be replaced, added, removed, moved, focused and sorted independently. configure_component accepts only the settings to change; do not repeat its component ID inside the patch. Call read_page first. Human topic locks, field locks, pinned developments and hidden publications remain protected unless their exact semantic operation is requested.',
       inputSchema: {
         type: 'object',
         properties: {

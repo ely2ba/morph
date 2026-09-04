@@ -1,4 +1,5 @@
 .current-app {
+  --morph-accent-soft: rgb(141 48 38 / 18%);
   --tc-ink: #171816;
   --tc-muted: #676962;
   --tc-line: #d6d4cc;
@@ -1023,13 +1024,21 @@
   color: var(--tc-red);
   font-size: 11px;
   font-weight: 700;
+  max-width: calc(100vw - 24px);
+  white-space: nowrap;
 }
-.tc-building span {
+.tc-building > i {
   width: 7px;
   height: 7px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: var(--tc-red);
   animation: tc-pulse 700ms infinite alternate;
+}
+.tc-building > strong {
+  padding-left: 8px;
+  border-left: 1px solid #e2d2cc;
+  font-size: 9px;
 }
 @keyframes tc-pulse {
   to {
@@ -1211,7 +1220,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .tc-decision,
-  .tc-building span {
+  .tc-building > i {
     animation: none;
   }
 }
@@ -1234,7 +1243,6 @@
   border-top: 3px double var(--tc-ink);
   border-bottom: 1px solid var(--tc-line);
   background: #fbfaf6;
-  animation: tc-component-in 420ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
 }
 .tc-composed-block.tc-half {
   grid-column: span 1;
@@ -1540,32 +1548,13 @@
   font-size: 9px;
   text-transform: uppercase;
 }
-.is-recomposing [data-component-id] {
-  animation: tc-recompose 520ms ease both;
-}
-.is-building .tc-latest,
-.is-building .tc-lead-grid {
+.is-building .tc-standard {
   opacity: 0.55;
   transform: scale(0.993);
+  transform-origin: center top;
   transition:
     opacity 300ms,
     transform 500ms;
-}
-@keyframes tc-component-in {
-  from {
-    opacity: 0;
-    transform: translateY(9px);
-  }
-}
-@keyframes tc-recompose {
-  0% {
-    opacity: 0.52;
-    transform: translateY(6px);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
 }
 @media (max-width: 720px) {
   .tc-composition-grid {
@@ -1614,8 +1603,22 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tc-composed-block,
-  .is-recomposing [data-component-id] {
+  .tc-composed-block {
     animation: none;
+  }
+}
+@media (max-width: 520px) {
+  .tc-building {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    border-radius: 13px;
+    white-space: normal;
+  }
+  .tc-building > i {
+    grid-row: 1 / 3;
+  }
+  .tc-building > strong {
+    padding-left: 0;
+    border-left: 0;
   }
 }

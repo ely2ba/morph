@@ -27,6 +27,10 @@ import {
   clusterById,
   clusters,
   compareCoverage,
+  editionComponentFields,
+  editionComponentFieldsByType,
+  editionComponentMetricIds,
+  editionComponentVariantsByType,
   editionRelaxations,
   formatPublished,
   formatReadingTime,
@@ -36,6 +40,7 @@ import {
   type Article,
   type BackgroundMode,
   type EditionCandidate,
+  type EditionComponentMetricId,
   type EditionConfig,
   type EditionSelection,
   type MinimumId,
@@ -47,9 +52,12 @@ import {
 } from '@/lib/edition-webmcp';
 import { AssistantPromptPanel } from '@/app/assistant-prompt-panel';
 import {
+  playMorphStatusPhases,
+  runMorphSurfaceTransition,
+} from '@/app/morph-transition';
+import {
   configureComponent,
   editionComponentTypes,
-  editionGroupingIds,
   insertComponent,
   moveComponent,
   parseComposition,
@@ -74,13 +82,7 @@ const editionRecordIds = [
 ];
 const editionCompositionOptions = {
   allowedTypes: editionComponentTypes,
-  allowedMetricIds: [
-    'reading_seconds',
-    'priority',
-    'new_fact_count',
-    'coverage_count',
-    'publication_count',
-  ],
+  allowedMetricIds: editionComponentMetricIds,
   allowedRecordIds: editionRecordIds,
   allowedAssumptionIds: [
     'budget_seconds',
@@ -89,8 +91,10 @@ const editionCompositionOptions = {
     'original_reporting_weight',
     'background_mode',
   ],
-  allowedGroupIds: editionGroupingIds,
   maximumRecords: editionRecordIds.length,
+  supportedFields: editionComponentFields,
+  supportedFieldsByType: editionComponentFieldsByType,
+  allowedVariantsByType: editionComponentVariantsByType,
 };
 type EditionFieldId =
   | 'budget_seconds'
@@ -270,6 +274,31 @@ function validateConfig(config: EditionConfig) {
   )
     return 'Choose a supported background mode.';
   return null;
+}
+
+type EditionRelaxation = ReturnType<typeof editionRelaxations>[number];
+
+function applyEditionRelaxation(
+  relaxation: EditionRelaxation,
+  commit: (fn: (state: AppState) => AppState) => AppState,
+  announce: (message: string) => void,
+) {
+  const next = commit((current) => ({
+    ...current,
+    edition: { ...current.edition!, ...relaxation.patch },
+    hiddenPublications: relaxation.restorePublications
+      ? []
+      : current.hiddenPublications,
+    pinnedClusters: relaxation.unpinAll ? [] : current.pinnedClusters,
+  }));
+  const selection = selectEdition(
+    next.edition!,
+    next.pinnedClusters,
+    next.hiddenPublications,
+  );
+  announce(
+    `Edition recomposed. ${selection.selected.length} developments · ${formatReadingTime(selection.usedSeconds)}.`,
+  );
 }
 
 function SiteLinks() {
@@ -1246,16 +1275,7 @@ function DecisionPage({
                     type="button"
                     key={relaxation.id}
                     onClick={() =>
-                      commit((current) => ({
-                        ...current,
-                        edition: { ...current.edition!, ...relaxation.patch },
-                        hiddenPublications: relaxation.restorePublications
-                          ? []
-                          : current.hiddenPublications,
-                        pinnedClusters: relaxation.unpinAll
-                          ? []
-                          : current.pinnedClusters,
-                      }))
+                      applyEditionRelaxation(relaxation, commit, announce)
                     }
                   >
                     {relaxation.label}
@@ -1330,6 +1350,54 @@ function clusterForComponent(component: NativeComponent) {
     if (article) return clusterById.get(article.clusterId) ?? null;
   }
   return clusterById.get('solmere-tide') ?? clusters[0] ?? null;
+}
+
+function editionRowsForComponent(
+  component: NativeComponent,
+  selection: EditionSelection,
+) {
+  const originalOrder = new Map(
+    selection.selected.map((candidate, index) => [candidate.cluster.id, index]),
+  );
+  const requestedClusters = new Set(
+    (component.recordIds ?? []).flatMap((id) => {
+      if (clusterById.has(id)) return [id];
+      const article = articleById.get(id);
+      return article ? [article.clusterId] : [];
+    }),
+  );
+  const rows = requestedClusters.size
+    ? selection.selected.filter((candidate) =>
+        requestedClusters.has(candidate.cluster.id),
+      )
+    : [...selection.selected];
+  const metric = component.sortMetricId as EditionComponentMetricId | undefined;
+  if (metric) {
+    const value = (candidate: EditionCandidate): number | string => {
+      if (metric === 'reading_time') return candidate.seconds;
+      if (metric === 'novel_facts') return candidate.whatNewFacts.length;
+      if (metric === 'original_reporting')
+        return Number(candidate.representative.originalReporting);
+      if (metric === 'publication_order')
+        return candidate.representative.publishedAt;
+      return topicLabels[candidate.cluster.topicId];
+    };
+    const direction = component.sortDirection === 'desc' ? -1 : 1;
+    rows.sort((left, right) => {
+      const leftValue = value(left);
+      const rightValue = value(right);
+      const difference =
+        typeof leftValue === 'number' && typeof rightValue === 'number'
+          ? leftValue - rightValue
+          : String(leftValue).localeCompare(String(rightValue));
+      return (
+        difference * direction ||
+        (originalOrder.get(left.cluster.id) ?? 0) -
+          (originalOrder.get(right.cluster.id) ?? 0)
+      );
+    });
+  }
+  return rows.slice(0, component.limit ?? rows.length);
 }
 
 function CurrentTimeline({ component }: { component: NativeComponent }) {
@@ -1573,9 +1641,8 @@ function ComposedEditionPage({
           </div>
           {selection.feasible ? (
             <div className="tc-composed-stories">
-              {selection.selected
-                .slice(0, component.limit ?? selection.selected.length)
-                .map((candidate, index) => (
+              {editionRowsForComponent(component, selection).map(
+                (candidate, index) => (
                   <StoryCard
                     key={candidate.cluster.id}
                     candidate={candidate}
@@ -1586,7 +1653,8 @@ function ComposedEditionPage({
                     openReason={() => openReason(candidate.cluster.id)}
                     openComparison={() => openComparison(candidate.cluster.id)}
                   />
-                ))}
+                ),
+              )}
               <div className="tc-edition-end">
                 <Check />
                 <p>
@@ -1867,16 +1935,7 @@ function ComposedEditionPage({
                 <button
                   key={relaxation.id}
                   onClick={() =>
-                    commit((current) => ({
-                      ...current,
-                      edition: { ...current.edition!, ...relaxation.patch },
-                      hiddenPublications: relaxation.restorePublications
-                        ? []
-                        : current.hiddenPublications,
-                      pinnedClusters: relaxation.unpinAll
-                        ? []
-                        : current.pinnedClusters,
-                    }))
+                    applyEditionRelaxation(relaxation, commit, announce)
                   }
                 >
                   {relaxation.label}
@@ -1990,13 +2049,14 @@ export default function EditionPage() {
   const [hydrated, setHydrated] = useState(false);
   const [mcpAvailable, setMcpAvailable] = useState(false);
   const [building, setBuilding] = useState<{
-    phase: 'working' | 'result';
-    count?: number;
-    seconds?: number;
+    label: string;
+    fromCount: number;
+    toCount: number;
   } | null>(null);
-  const [recomposing, setRecomposing] = useState(false);
   const [liveMessage, setLiveMessage] = useState('');
   const stateRef = useRef(state);
+  const transitionRootRef = useRef<HTMLDivElement>(null);
+  const transitionSurfaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -2126,25 +2186,33 @@ export default function EditionPage() {
           common_values: [300, 600, 900, 1200],
         },
         supported_background_modes: ['omit', 'include_free', 'include_counted'],
+        supported_component_metric_ids: editionComponentMetricIds,
+        supported_component_metrics: [
+          {
+            id: 'reading_time',
+            value: 'Selected development reading time in seconds',
+          },
+          {
+            id: 'novel_facts',
+            value: 'Count of newly verified facts in the development',
+          },
+          {
+            id: 'original_reporting',
+            value: 'Whether the representative report is original reporting',
+          },
+          {
+            id: 'publication_order',
+            value: 'Representative report publication time',
+          },
+          { id: 'topic', value: 'The development topic label' },
+        ],
         native_component_types: editionComponentTypes,
         native_component_settings: {
           ordered: true,
-          supported_fields: [
-            'heading',
-            'variant',
-            'metric_ids',
-            'record_ids',
-            'assumption_ids',
-            'group_by',
-            'sort_metric_id',
-            'sort_direction',
-            'emphasized_record_ids',
-            'emphasized_metric_ids',
-            'width',
-            'limit',
-            'show_only_differences',
-          ],
-          supported_grouping_ids: editionGroupingIds,
+          supported_fields: editionComponentFields,
+          supported_fields_by_type: editionComponentFieldsByType,
+          supported_variants_by_type: editionComponentVariantsByType,
+          supported_metric_ids: editionComponentMetricIds,
           record_ids_may_reference: ['cluster_id', 'article_id'],
         },
         supported_composition_operations: [
@@ -2217,19 +2285,15 @@ export default function EditionPage() {
         !rawMinimums ||
         typeof rawMinimums !== 'object' ||
         Array.isArray(rawMinimums) ||
-        !Array.isArray(input.excluded_topic_ids)
+        !Array.isArray(input.excluded_topic_ids) ||
+        !Array.isArray(input.components)
       )
         return null;
       const minima = rawMinimums as Record<string, unknown>;
-      let composition: NativeComponent[];
-      try {
-        composition = parseComposition(
-          input.components,
-          editionCompositionOptions,
-        );
-      } catch {
-        return null;
-      }
+      const composition = parseComposition(
+        input.components,
+        editionCompositionOptions,
+      );
       return {
         budgetSeconds: Number(input.budget_seconds),
         excludedTopicIds: input.excluded_topic_ids as TopicId[],
@@ -2261,7 +2325,25 @@ export default function EditionPage() {
           'The page changed since it was read.',
           { current_revision: current.revision },
         );
-      const proposed = parseConfig(input);
+      const parsed = (() => {
+        try {
+          return { proposed: parseConfig(input) } as const;
+        } catch (error) {
+          return { error } as const;
+        }
+      })();
+      if ('error' in parsed) {
+        const error = parsed.error;
+        return toolFailure(
+          'INVALID_COMPOSITION',
+          error instanceof Error ? error.message : 'Invalid page composition.',
+          {
+            valid_component_types: editionComponentTypes,
+            valid_metric_ids: editionComponentMetricIds,
+          },
+        );
+      }
+      const proposed = parsed.proposed;
       if (!proposed)
         return toolFailure(
           'MISSING_INPUT',
@@ -2294,19 +2376,28 @@ export default function EditionPage() {
         current.pinnedClusters,
         current.hiddenPublications,
       );
-      const reduceMotion = matchMedia(
-        '(prefers-reduced-motion: reduce)',
-      ).matches;
-      setBuilding({ phase: 'working' });
-      if (!reduceMotion)
-        await new Promise((resolve) => setTimeout(resolve, 650));
-      setBuilding({
-        phase: 'result',
-        count: prepared.selected.length,
-        seconds: prepared.usedSeconds,
-      });
-      if (!reduceMotion)
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      const firstTransformation = !current.edition;
+      if (firstTransformation) {
+        try {
+          await playMorphStatusPhases(
+            [
+              `Reading ${articles.length} reports`,
+              'Clustering repeated coverage and verified facts',
+              'Composing your finite edition',
+            ],
+            (label) =>
+              setBuilding({
+                label,
+                fromCount: articles.length,
+                toCount: prepared.selected.length,
+              }),
+            signal,
+          );
+        } catch (error) {
+          setBuilding(null);
+          throw error;
+        }
+      }
       abortIfNeeded(signal);
       if (stateRef.current.revision !== current.revision) {
         setBuilding(null);
@@ -2316,19 +2407,32 @@ export default function EditionPage() {
           { current_revision: stateRef.current.revision },
         );
       }
-      const next = commit((present) => ({
-        ...present,
-        edition: proposed,
-        reasonClusterId: null,
-      }));
-      setBuilding(null);
+      let next = current;
+      try {
+        await runMorphSurfaceTransition({
+          root: transitionRootRef.current,
+          live: transitionSurfaceRef.current,
+          kind: firstTransformation ? 'create' : 'update',
+          signal,
+          apply: () => {
+            next = commit((present) => ({
+              ...present,
+              edition: proposed,
+              reasonClusterId: null,
+            }));
+          },
+        });
+      } finally {
+        setBuilding(null);
+      }
       setLiveMessage(
         `${prepared.selected.length} developments · ${formatReadingTime(prepared.usedSeconds)}.`,
       );
       history.replaceState({ edition: false }, '');
       history.pushState({ edition: true }, '');
-      await delayPaint();
-      document.getElementById('tc-edition-heading')?.focus();
+      document
+        .getElementById('tc-edition-heading')
+        ?.focus({ preventScroll: true });
       return jsonSafe({
         ok: true,
         revision: next.revision,
@@ -2432,9 +2536,22 @@ export default function EditionPage() {
                 Number(operation.position),
               );
             else {
+              const target = draft.composition.find(
+                (component) => component.id === componentId,
+              );
+              if (!target)
+                throw new Error(`Unknown component “${componentId}”.`);
+              const patchValue = operation.component as
+                | Record<string, unknown>
+                | null;
               const parsed = parseNativeComponentPatch(
                 operation.component,
-                editionCompositionOptions,
+                patchValue && typeof patchValue.type === 'string'
+                  ? editionCompositionOptions
+                  : {
+                      ...editionCompositionOptions,
+                      allowedTypes: [target.type],
+                    },
               );
               draft.composition = configureComponent(
                 draft.composition,
@@ -2569,6 +2686,19 @@ export default function EditionPage() {
           );
         changed.push(type);
       }
+      try {
+        draft.composition = parseComposition(
+          draft.composition,
+          editionCompositionOptions,
+        );
+      } catch (error) {
+        return toolFailure(
+          'INVALID_COMPOSITION',
+          error instanceof Error
+            ? error.message
+            : 'Invalid page composition.',
+        );
+      }
       const invalid = validateConfig(draft);
       if (invalid) return toolFailure('INVALID_EDITION', invalid);
       abortIfNeeded(signal);
@@ -2588,19 +2718,23 @@ export default function EditionPage() {
           current_composition: serializeComposition(draft.composition),
           ...compactSelection(current),
         });
-      setRecomposing(true);
-      const next = commit((present) => ({
-        ...present,
-        edition: draft,
-        lockedFields,
-        lockedTopics,
-        pinnedClusters,
-        hiddenPublications,
-      }));
-      await delayPaint();
-      if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
-        await new Promise((resolve) => setTimeout(resolve, 420));
-      setRecomposing(false);
+      let next = current;
+      await runMorphSurfaceTransition({
+        root: transitionRootRef.current,
+        live: transitionSurfaceRef.current,
+        kind: 'update',
+        signal,
+        apply: () => {
+          next = commit((present) => ({
+            ...present,
+            edition: draft,
+            lockedFields,
+            lockedTopics,
+            pinnedClusters,
+            hiddenPublications,
+          }));
+        },
+      });
       const recomposed = selectEdition(
         draft,
         pinnedClusters,
@@ -2749,7 +2883,7 @@ export default function EditionPage() {
       compareCoverage: compareCoverageHandler,
       showSelectionReason,
     };
-  }, [commit, replaceTransient]);
+  }, [commit, replaceTransient, transitionRootRef, transitionSurfaceRef]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2781,42 +2915,47 @@ export default function EditionPage() {
 
   if (!hydrated) return <div className="tc-hydration-shell" aria-busy="true" />;
   return (
-    <div
-      className={`current-app${building ? ' is-building' : ''}${recomposing ? ' is-recomposing' : ''}`}
-    >
+    <div className={`current-app${building ? ' is-building' : ''}`}>
       <CurrentHeader mcpAvailable={mcpAvailable} />
       <div className="sr-only" aria-live="polite">
         {liveMessage}
       </div>
       {building && (
         <output className="tc-building">
-          <span />
-          {building.phase === 'working'
-            ? 'Collapsing 30 headlines into new developments…'
-            : `${building.count ?? 0} developments · ${formatReadingTime(building.seconds ?? 0)}.`}
+          <i aria-hidden="true" />
+          <span className="morph-status-label" key={building.label}>
+            {building.label}
+          </span>
+          <strong>
+            {building.fromCount} → {building.toCount} developments
+          </strong>
         </output>
       )}
-      {state.edition?.composition?.length ? (
-        <ComposedEditionPage
-          state={state}
-          commit={commit}
-          replaceTransient={replaceTransient}
-          undo={undo}
-          redo={redo}
-          announce={setLiveMessage}
-        />
-      ) : state.edition ? (
-        <DecisionPage
-          state={state}
-          commit={commit}
-          replaceTransient={replaceTransient}
-          undo={undo}
-          redo={redo}
-          announce={setLiveMessage}
-        />
-      ) : (
-        <StandardPage />
-      )}
+      <div className="morph-transition-root" ref={transitionRootRef}>
+        <div className="morph-transition-live" ref={transitionSurfaceRef}>
+          {state.edition?.composition?.length ? (
+            <ComposedEditionPage
+              state={state}
+              commit={commit}
+              replaceTransient={replaceTransient}
+              undo={undo}
+              redo={redo}
+              announce={setLiveMessage}
+            />
+          ) : state.edition ? (
+            <DecisionPage
+              state={state}
+              commit={commit}
+              replaceTransient={replaceTransient}
+              undo={undo}
+              redo={redo}
+              announce={setLiveMessage}
+            />
+          ) : (
+            <StandardPage />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

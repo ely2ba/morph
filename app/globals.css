@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -104,6 +104,7 @@ button {
   border: 0 !important;
 }
 .app {
+  --morph-accent-soft: rgb(39 94 254 / 18%);
   min-height: 100vh;
 }
 .service-strip {
@@ -315,7 +316,7 @@ button {
   color: #4d4a44;
   font-size: 13px;
 }
-.filters input[type="range"] {
+.filters input[type='range'] {
   width: 100%;
   accent-color: #275efe;
 }
@@ -420,7 +421,7 @@ button {
   font-size: 12px;
 }
 .standard-facts span:not(:last-child)::after {
-  content: "·";
+  content: '·';
   padding-left: 11px;
   color: #b0aca3;
 }
@@ -488,8 +489,8 @@ button {
   padding: 10px 20px 30px;
   background: #fff;
 }
-.detail-sheet [data-slot="sheet-header"],
-.calculation-sheet [data-slot="sheet-header"] {
+.detail-sheet [data-slot='sheet-header'],
+.calculation-sheet [data-slot='sheet-header'] {
   padding: 24px 0 12px;
 }
 .sheet-title {
@@ -825,14 +826,14 @@ button {
   justify-content: space-between;
   font-size: 13px;
 }
-.slider-wrap [data-slot="slider"] {
+.slider-wrap [data-slot='slider'] {
   margin: 18px 0 10px;
 }
-.slider-wrap [data-slot="slider-track"] {
+.slider-wrap [data-slot='slider-track'] {
   height: 5px;
   background: #cfd7eb;
 }
-.slider-wrap [data-slot="slider-thumb"] {
+.slider-wrap [data-slot='slider-thumb'] {
   width: 20px;
   height: 20px;
   border: 5px solid #275efe;
@@ -866,7 +867,7 @@ button {
   cursor: pointer;
   font-size: 12px;
 }
-.view-tabs button[aria-selected="true"] {
+.view-tabs button[aria-selected='true'] {
   background: white;
   color: #171714;
   box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
@@ -1471,13 +1472,22 @@ button {
   box-shadow: 0 8px 24px rgb(23 23 20 / 12%);
   font-size: 13px;
   font-weight: 650;
+  max-width: calc(100vw - 24px);
+  white-space: nowrap;
 }
-.building-pill span {
+.building-pill > i {
   width: 8px;
   height: 8px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: #275efe;
   animation: pulse 900ms infinite alternate;
+}
+.building-pill > strong {
+  padding-left: 9px;
+  border-left: 1px solid #d9e0f4;
+  color: #275efe;
+  font-size: 11px;
 }
 @keyframes pulse {
   to {
@@ -2001,6 +2011,60 @@ button {
   }
 }
 
+.morph-transition-root {
+  position: relative;
+}
+.morph-transition-live {
+  position: relative;
+}
+.morph-transition-outgoing {
+  position: absolute !important;
+  inset: 0 0 auto;
+  z-index: 2;
+  width: 100%;
+  pointer-events: none;
+  transform-origin: center top;
+  will-change: opacity, transform;
+}
+.morph-transition-removed-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.morph-transition-removed {
+  pointer-events: none;
+  will-change: opacity, transform;
+}
+.morph-status-label {
+  animation: morph-status-label-in 150ms ease-out both;
+}
+@keyframes morph-status-label-in {
+  from {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .morph-status-label {
+    animation-duration: 140ms !important;
+  }
+}
+@media (max-width: 520px) {
+  .building-pill {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    border-radius: 14px;
+    white-space: normal;
+  }
+  .building-pill > i {
+    grid-row: 1 / 3;
+  }
+  .building-pill > strong {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
 /* Ordered, site-native decision composition */
 .route-hydration-shell {
   min-height: 100vh;
@@ -2018,7 +2082,6 @@ button {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
-  animation: composed-in 420ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
 }
 .composed-block.composed-half {
   grid-column: span 1;
@@ -2308,32 +2371,13 @@ button {
 .requirement-checklist span {
   text-transform: capitalize;
 }
-.is-recomposing [data-component-id] {
-  animation: recompose-block 520ms ease both;
-}
-.is-building .standard-grid,
-.is-building .catalog-layout {
+.is-building .standard-page {
   opacity: 0.6;
   transform: scale(0.992);
+  transform-origin: center top;
   transition:
     opacity 300ms,
     transform 500ms;
-}
-@keyframes composed-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-@keyframes recompose-block {
-  0% {
-    opacity: 0.55;
-    transform: translateY(6px);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
 }
 @media (max-width: 760px) {
   .composition-grid {

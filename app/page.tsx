@@ -51,6 +51,10 @@ import {
 import { registerDecisionTools, type WebMcpHandlers } from "@/lib/webmcp";
 import { AssistantPromptPanel } from "@/app/assistant-prompt-panel";
 import {
+  playMorphStatusPhases,
+  runMorphSurfaceTransition,
+} from "@/app/morph-transition";
+import {
   configureComponent,
   insertComponent,
   moveComponent,
@@ -3095,14 +3099,16 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [mcpAvailable, setMcpAvailable] = useState(false);
   const [building, setBuilding] = useState<{
-    phase: "checking" | "result";
-    count?: number;
+    label: string;
+    fromCount: number;
+    toCount: number;
   } | null>(null);
-  const [recomposing, setRecomposing] = useState(false);
   const [toast, setToast] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [liveMessage, setLiveMessage] = useState("");
   const stateRef = useRef(state);
+  const transitionRootRef = useRef<HTMLDivElement>(null);
+  const transitionSurfaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -3465,15 +3471,28 @@ export default function Home() {
       abortIfNeeded(signal);
       const createdCount = evaluateCatalog(config, current.hidden).ranked
         .length;
-      const reduceMotion = matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
-      setBuilding({ phase: "checking" });
-      if (!reduceMotion)
-        await new Promise((resolve) => setTimeout(resolve, 650));
-      setBuilding({ phase: "result", count: createdCount });
-      if (!reduceMotion)
-        await new Promise((resolve) => setTimeout(resolve, 300));
+      const firstTransformation = !current.decision;
+      if (firstTransformation) {
+        try {
+          await playMorphStatusPhases(
+            [
+              `Reading ${catalog.length} ${plural(catalog.length, "machine")}`,
+              "Calculating fit and true cost",
+              "Composing your decision view",
+            ],
+            (label) =>
+              setBuilding({
+                label,
+                fromCount: catalog.length,
+                toCount: createdCount,
+              }),
+            signal,
+          );
+        } catch (error) {
+          setBuilding(null);
+          throw error;
+        }
+      }
       try {
         abortIfNeeded(signal);
       } catch (error) {
@@ -3488,16 +3507,28 @@ export default function Home() {
           { current_revision: stateRef.current.revision },
         );
       }
-      const next = commit((s) => ({
-        ...s,
-        decision: config,
-        compared: s.compared.every((id) => productById.has(id))
-          ? s.compared
-          : [],
-        viewMode: config.plot ? "plot" : "cards",
-        calculation: null,
-      }));
-      setBuilding(null);
+      let next = current;
+      try {
+        await runMorphSurfaceTransition({
+          root: transitionRootRef.current,
+          live: transitionSurfaceRef.current,
+          kind: firstTransformation ? "create" : "update",
+          signal,
+          apply: () => {
+            next = commit((s) => ({
+              ...s,
+              decision: config,
+              compared: s.compared.every((id) => productById.has(id))
+                ? s.compared
+                : [],
+              viewMode: config.plot ? "plot" : "cards",
+              calculation: null,
+            }));
+          },
+        });
+      } finally {
+        setBuilding(null);
+      }
       setToast(true);
       setTimeout(() => setToast(false), 4200);
       setLiveMessage(
@@ -3505,8 +3536,9 @@ export default function Home() {
       );
       history.replaceState({ decision: false }, "");
       history.pushState({ decision: true }, "");
-      await delayPaint();
-      document.getElementById("decision-heading")?.focus();
+      document
+        .getElementById("decision-heading")
+        ?.focus({ preventScroll: true });
       const evaluated = evaluateCatalog(config, next.hidden);
       return jsonSafe({
         ok: true,
@@ -3816,25 +3848,29 @@ export default function Home() {
           changed_controls: [],
           current_composition: serializeComposition(draft.composition),
         });
-      setRecomposing(true);
-      const next = commit((s) => ({
-        ...s,
-        decision: draft,
-        lockedIds,
-        shortlisted,
-        hidden,
-        compared,
-        selectedComparisonRowIds:
-          compared.length < 2 ? null : s.selectedComparisonRowIds,
-      }));
+      let next = current;
+      await runMorphSurfaceTransition({
+        root: transitionRootRef.current,
+        live: transitionSurfaceRef.current,
+        kind: "update",
+        signal,
+        apply: () => {
+          next = commit((s) => ({
+            ...s,
+            decision: draft,
+            lockedIds,
+            shortlisted,
+            hidden,
+            compared,
+            selectedComparisonRowIds:
+              compared.length < 2 ? null : s.selectedComparisonRowIds,
+          }));
+        },
+      });
       const updatedCount = evaluateCatalog(draft, next.hidden).ranked.length;
       setLiveMessage(
         `Decision view updated. ${updatedCount} ${plural(updatedCount, "machine")} ${updatedCount === 1 ? "meets" : "meet"} every requirement.`,
       );
-      await delayPaint();
-      if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
-        await new Promise((resolve) => setTimeout(resolve, 420));
-      setRecomposing(false);
       highlightAgentChanges(changed);
       const evaluated = evaluateCatalog(draft, next.hidden);
       return jsonSafe({
@@ -4019,19 +4055,21 @@ export default function Home() {
   if (!hydrated)
     return <div className="route-hydration-shell" aria-busy="true" />;
   return (
-    <div
-      className={`app${building ? " is-building" : ""}${recomposing ? " is-recomposing" : ""}`}
-    >
+    <div className={`app${building ? " is-building" : ""}`}>
       <Header mcpAvailable={mcpAvailable} />
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {liveMessage}
       </div>
       {building && (
         <output className="building-pill">
-          <span />
-          {building.phase === "checking"
-            ? "Checking 28 machines against your home…"
-            : `${building.count ?? 0} fit.`}
+          <i aria-hidden="true" />
+          <span className="morph-status-label" key={building.label}>
+            {building.label}
+          </span>
+          <strong>
+            {building.fromCount} → {building.toCount}{" "}
+            {plural(building.toCount, "machine")}
+          </strong>
         </output>
       )}
       {toast && (
@@ -4047,29 +4085,33 @@ export default function Home() {
           </button>
         </div>
       )}
-      {state.decision?.composition?.length ? (
-        <ComposedDecisionPage
-          state={state}
-          commit={commit}
-          replaceTransient={replaceTransient}
-          onView={setSelectedProduct}
-          announce={setLiveMessage}
-          onUndo={undo}
-          onRedo={redo}
-        />
-      ) : state.decision ? (
-        <DecisionPage
-          state={state}
-          commit={commit}
-          replaceTransient={replaceTransient}
-          onView={setSelectedProduct}
-          announce={setLiveMessage}
-          onUndo={undo}
-          onRedo={redo}
-        />
-      ) : (
-        <StandardPage onView={setSelectedProduct} />
-      )}
+      <div className="morph-transition-root" ref={transitionRootRef}>
+        <div className="morph-transition-live" ref={transitionSurfaceRef}>
+          {state.decision?.composition?.length ? (
+            <ComposedDecisionPage
+              state={state}
+              commit={commit}
+              replaceTransient={replaceTransient}
+              onView={setSelectedProduct}
+              announce={setLiveMessage}
+              onUndo={undo}
+              onRedo={redo}
+            />
+          ) : state.decision ? (
+            <DecisionPage
+              state={state}
+              commit={commit}
+              replaceTransient={replaceTransient}
+              onView={setSelectedProduct}
+              announce={setLiveMessage}
+              onUndo={undo}
+              onRedo={redo}
+            />
+          ) : (
+            <StandardPage onView={setSelectedProduct} />
+          )}
+        </div>
+      </div>
       <ProductDetail
         product={selectedProduct}
         open={Boolean(selectedProduct)}
