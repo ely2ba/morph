@@ -224,7 +224,9 @@ export function parseNativeComponent(
       'type',
       ...supportedFields.flatMap((field) => componentFieldAliases[field]),
     ]);
-    const unsupported = Object.keys(raw).find((key) => !allowedKeys.has(key));
+    const unsupported = Object.keys(raw).find(
+      (key) => raw[key] !== undefined && !allowedKeys.has(key),
+    );
     if (unsupported)
       throw new Error(
         `Component field “${unsupported}” is not supported by ${type}.`,
