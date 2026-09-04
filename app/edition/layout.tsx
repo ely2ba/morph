@@ -1,21 +1,37 @@
-import type { Metadata } from 'next';
-import './edition.css';
+import type { Metadata } from "next";
+import "./edition.css";
 
 export const metadata: Metadata = {
-  title: 'The Current | A finite, source-preserving edition',
-  description: 'Thirty fictional reports become a transparent edition built from verified, site-owned facts.',
+  title: "The Current | A finite, source-preserving edition",
+  description:
+    "Thirty fictional reports become a transparent edition built from verified, site-owned facts.",
+  alternates: { canonical: "/edition" },
   openGraph: {
-    title: 'The Current — your finite edition',
-    description: 'A live WebMCP proof that collapses repeated coverage while preserving original reporting and provenance.',
-    images: [],
+    title: "The Current | The You-Shaped Web",
+    description:
+      "From an endless feed to finite editions, event timelines, and source maps.",
+    url: "/edition",
+    siteName: "The You-Shaped Web",
+    images: [
+      {
+        url: "/submission/the-current-finite-edition.png",
+        width: 1280,
+        height: 720,
+        alt: "A finite, source-preserving edition from The Current",
+      },
+    ],
   },
   twitter: {
-    title: 'The Current — your finite edition',
-    description: 'A live WebMCP proof that collapses repeated coverage while preserving original reporting and provenance.',
-    images: [],
+    card: "summary_large_image",
+    title: "The Current | The You-Shaped Web",
+    description:
+      "From an endless feed to finite editions, event timelines, and source maps.",
+    images: ["/submission/the-current-finite-edition.png"],
   },
 };
 
-export default function EditionLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function EditionLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return children;
 }

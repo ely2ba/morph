@@ -19,7 +19,6 @@ import {
   Search,
   ShoppingBag,
   SlidersHorizontal,
-  Sparkles,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,6 +49,20 @@ import {
   type RequirementId,
 } from "@/lib/decision";
 import { registerDecisionTools, type WebMcpHandlers } from "@/lib/webmcp";
+import { AssistantPromptPanel } from "@/app/assistant-prompt-panel";
+import {
+  configureComponent,
+  insertComponent,
+  moveComponent,
+  parseComposition,
+  parseNativeComponent,
+  parseNativeComponentPatch,
+  removeComponent,
+  serializeComposition,
+  washerComponentTypes,
+  washerGroupingIds,
+  type NativeComponent,
+} from "@/lib/composition";
 
 const STORAGE_KEY = "hearth-home-decision-v1";
 const LIVE_PROOF_ROUTES = {
@@ -126,26 +139,46 @@ const snapshotOf = (state: AppState): Snapshot => ({
   compared: state.compared,
   selectedComparisonRowIds: state.selectedComparisonRowIds ?? null,
   viewMode: state.viewMode,
-  calculation: state.calculation,
-  showExcluded: state.showExcluded,
+  calculation: null,
+  showExcluded: false,
 });
-const migrateDecision = (decision: DecisionConfig | null | undefined) =>
-  decision
-    ? {
-        ...decision,
-        title:
-          decision.title === LEGACY_DEFAULT_TITLE
-            ? defaultDecision.title
-            : decision.title,
-        requirements: decision.requirements.map((requirement) => {
-          const linkedValue =
-            decision.assumptions[requirement.id as keyof Assumptions];
-          return requirement.value != null && linkedValue != null
-            ? { ...requirement, value: linkedValue }
-            : requirement;
-        }),
-      }
-    : null;
+const washerCompositionOptions = {
+  allowedTypes: washerComponentTypes,
+  allowedMetricIds: metricIds,
+  allowedRecordIds: catalog.map((product) => product.id),
+  allowedAssumptionIds: assumptionIds,
+  allowedGroupIds: washerGroupingIds,
+  maximumRecords: catalog.length,
+};
+const migrateDecision = (decision: DecisionConfig | null | undefined) => {
+  if (!decision) return null;
+  let composition = defaultDecision.composition;
+  try {
+    composition = parseComposition(
+      Array.isArray(decision.composition)
+        ? decision.composition
+        : defaultDecision.composition,
+      washerCompositionOptions,
+    );
+  } catch {
+    composition = defaultDecision.composition;
+  }
+  return {
+    ...decision,
+    title:
+      decision.title === LEGACY_DEFAULT_TITLE
+        ? defaultDecision.title
+        : decision.title,
+    requirements: (decision.requirements ?? []).map((requirement) => {
+      const linkedValue =
+        decision.assumptions[requirement.id as keyof Assumptions];
+      return requirement.value != null && linkedValue != null
+        ? { ...requirement, value: linkedValue }
+        : requirement;
+    }),
+    composition,
+  };
+};
 function migrateSnapshot(raw: Partial<Snapshot> | undefined): Snapshot {
   return {
     decision: migrateDecision(raw?.decision),
@@ -290,6 +323,15 @@ function validateConfig(config: DecisionConfig) {
     );
   const badAssumption = validateAssumptions(config.assumptions);
   if (badAssumption) return badAssumption;
+  try {
+    parseComposition(config.composition, washerCompositionOptions);
+  } catch (error) {
+    return toolFailure(
+      "INVALID_COMPOSITION",
+      error instanceof Error ? error.message : "Invalid page composition.",
+      { valid_component_types: washerComponentTypes },
+    );
+  }
   if (
     !config.visibleMetricIds.length ||
     config.visibleMetricIds.length > 6 ||
@@ -644,9 +686,18 @@ function Header({ mcpAvailable }: { mcpAvailable: boolean }) {
       </header>
       {mcpAvailable && (
         <div className="assistant-ribbon">
-          <span>
-            <Sparkles size={14} /> Works with your browser assistant
-          </span>
+          <AssistantPromptPanel
+            className="assistant-prompt-retail"
+            prompts={[
+              "Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.",
+              "I measured it: 58 cm deep. Remove the questions, make the remaining products a compact table, and put the quietest machine below £550 first.",
+              "Replace the table with a simple recommendation for my parents. Show what they sacrifice with each alternative and add a delivery calendar.",
+            ]}
+            links={[
+              { href: "/journeys", label: "Try Wayline" },
+              { href: "/edition", label: "Try The Current" },
+            ]}
+          />
         </div>
       )}
     </>
@@ -1971,6 +2022,900 @@ function DecisionPage({
   );
 }
 
+function compositionRows(
+  component: NativeComponent,
+  result: ReturnType<typeof evaluateCatalog>,
+  config: DecisionConfig,
+) {
+  const requested = component.recordIds?.length
+    ? (component.recordIds
+        .map((id) => result.all.find((row) => row.product.id === id))
+        .filter(Boolean) as Evaluation[])
+    : result.ranked.length
+      ? result.ranked
+      : result.all;
+  const metricId = (component.sortMetricId ??
+    config.primarySort.metricId) as MetricId;
+  const direction = component.sortDirection ?? config.primarySort.direction;
+  return [...requested]
+    .sort((a, b) => {
+      const eligible = Number(b.eligible) - Number(a.eligible);
+      if (eligible) return eligible;
+      const difference = a.metrics[metricId] - b.metrics[metricId];
+      return direction === "asc" ? difference : -difference;
+    })
+    .slice(0, component.limit ?? requested.length);
+}
+
+function ComposedWasherTable({
+  rows,
+  component,
+  onCompare,
+}: {
+  rows: Evaluation[];
+  component: NativeComponent;
+  onCompare: (id: string) => void;
+}) {
+  const metrics = (
+    component.metricIds?.length
+      ? component.metricIds
+      : ["purchase_price", "spin_noise_db", "narrowest_clearance_cm"]
+  ).filter((id): id is MetricId => metricIds.includes(id as MetricId));
+  return (
+    <div className="composed-table-wrap">
+      <p className="comparison-swipe-hint">
+        Swipe to see every detail <span aria-hidden="true">→</span>
+      </p>
+      <div className="decision-table table-scroll composed-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Machine</th>
+              {metrics.map((id) => (
+                <th key={id}>{metricMeta[id].label}</th>
+              ))}
+              <th>Installed depth</th>
+              <th>Result</th>
+              <th>
+                <span className="sr-only">Action</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.product.id}
+                className={row.eligible ? "" : "is-excluded"}
+              >
+                <th>
+                  {row.product.brand} {row.product.model}
+                </th>
+                {metrics.map((id) => (
+                  <td key={id}>{metricValue(id, row.metrics[id])}</td>
+                ))}
+                <td>{row.product.installedDepthCm.toFixed(1)} cm</td>
+                <td>
+                  {row.eligible ? (
+                    <span className="status-pass">Fits</span>
+                  ) : (
+                    <span className="status-fail">
+                      {row.reasons.join(" · ")}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <button onClick={() => onCompare(row.product.id)}>
+                    Compare
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ComposedDecisionPage({
+  state,
+  commit,
+  replaceTransient,
+  onView,
+  announce,
+  onUndo,
+  onRedo,
+}: {
+  state: AppState;
+  commit: (fn: (s: AppState) => AppState) => AppState;
+  replaceTransient: (fn: (s: AppState) => AppState) => AppState;
+  onView: (p: Product) => void;
+  announce: (text: string) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+}) {
+  const config = state.decision!;
+  const result = useMemo(
+    () => evaluateCatalog(config, state.hidden),
+    [config, state.hidden],
+  );
+  const setAssumption = (id: NumericAssumptionId, value: number) => {
+    const next = commit((current) => ({
+      ...current,
+      decision: setDecisionAssumption(current.decision!, id, value),
+    }));
+    const count = evaluateCatalog(next.decision!, next.hidden).ranked.length;
+    announce(
+      `${assumptionMeta[id].label} updated. ${count} ${plural(count, "machine")} now ${count === 1 ? "meets" : "meet"} every requirement.`,
+    );
+  };
+  const toggleLock = (id: AssumptionId) =>
+    commit((current) => ({
+      ...current,
+      lockedIds: current.lockedIds.includes(id)
+        ? current.lockedIds.filter((item) => item !== id)
+        : [...current.lockedIds, id],
+    }));
+  const toggleShortlist = (id: string) =>
+    commit((current) => ({
+      ...current,
+      shortlisted: current.shortlisted.includes(id)
+        ? current.shortlisted.filter((item) => item !== id)
+        : [...current.shortlisted, id],
+    }));
+  const toggleCompare = (id: string) =>
+    commit((current) => {
+      const compared = current.compared.includes(id)
+        ? current.compared.filter((item) => item !== id)
+        : current.compared.length < 4
+          ? [...current.compared, id]
+          : current.compared;
+      return {
+        ...current,
+        compared,
+        selectedComparisonRowIds:
+          compared.length < 2 ? null : current.selectedComparisonRowIds,
+      };
+    });
+  const hide = (id: string) =>
+    commit((current) => ({
+      ...current,
+      hidden: [...new Set([...current.hidden, id])],
+      compared: current.compared.filter((item) => item !== id),
+    }));
+  const openCalculation = (productId: string, metricId: DerivedMetricId) =>
+    replaceTransient((current) => ({
+      ...current,
+      calculation: { productId, metricId },
+    }));
+  const selectFromPlot = (id: string) =>
+    document
+      .getElementById(`product-${id}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const chips = assumptionIds.flatMap((id) => {
+    const value = config.assumptions[id as keyof Assumptions];
+    if (value == null) return [];
+    return [
+      {
+        id,
+        label: `${assumptionMeta[id].label}: ${value}${id === "machine_type" ? "" : ` ${assumptionMeta[id].displayUnit}`}`,
+      },
+    ];
+  });
+  const componentHeading = (component: NativeComponent, fallback: string) =>
+    component.heading ?? fallback;
+  const renderComponent = (component: NativeComponent) => {
+    const rows = compositionRows(component, result, config);
+    const headingId = `component-${component.id}`;
+    const shell = (content: React.ReactNode, className = "") => (
+      <section
+        key={component.id}
+        className={`composed-block composed-${component.type} ${component.width === "half" ? "composed-half" : ""} ${className}`}
+        data-component-id={component.id}
+        data-component-type={component.type}
+        aria-labelledby={headingId}
+      >
+        {content}
+      </section>
+    );
+
+    if (component.type === "decision_summary")
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow blue">Decision summary</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  `${result.ranked.length} of ${catalog.length} machines fit`,
+                )}
+              </h2>
+            </div>
+            <span className="result-number small">{result.ranked.length}</span>
+          </div>
+          <p className="component-lede">
+            {result.ranked.length
+              ? `Ranked from all ${catalog.length} machines using the requirements and balance shown here.`
+              : `No exact match. The nearest machines and exact shortfalls remain visible; none is labelled as fitting.`}
+          </p>
+          <div className="constraint-chips compact-chips">
+            {chips.slice(0, 8).map((chip) => (
+              <span key={chip.id}>
+                {state.lockedIds.includes(chip.id) && <Lock size={12} />}
+                <Check size={14} />
+                {chip.label}
+              </span>
+            ))}
+          </div>
+        </>,
+      );
+
+    if (component.type === "missing_questions") {
+      const requested = (
+        component.assumptionIds?.length
+          ? component.assumptionIds
+          : assumptionIds
+      ).filter(
+        (id): id is NumericAssumptionId =>
+          id !== "machine_type" &&
+          assumptionIds.includes(id as AssumptionId) &&
+          config.assumptions[id as NumericAssumptionId] == null,
+      );
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">A few useful answers</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  requested.length
+                    ? "Questions still to answer"
+                    : "Your measurements are answered",
+                )}
+              </h2>
+            </div>
+          </div>
+          {requested.length ? (
+            <div className="missing-question-grid">
+              {requested.map((id) => {
+                const meta = assumptionMeta[id];
+                return (
+                  <label key={id} data-assumption={id}>
+                    <span>{meta.label}</span>
+                    <span className="missing-input-row">
+                      <input
+                        type="number"
+                        min={meta.min}
+                        max={meta.max}
+                        step={meta.step}
+                        placeholder="Enter value"
+                        aria-label={meta.label}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (
+                            Number.isFinite(value) &&
+                            value >= meta.min &&
+                            value <= meta.max
+                          )
+                            setAssumption(id, value);
+                        }}
+                      />
+                      <em>{meta.displayUnit}</em>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="component-lede">
+              There are no missing inputs in this composition.
+            </p>
+          )}
+        </>,
+      );
+    }
+
+    if (component.type === "assumptions") {
+      const visible = (
+        component.assumptionIds?.length
+          ? component.assumptionIds
+          : assumptionIds
+      ).filter(
+        (id): id is NumericAssumptionId =>
+          id !== "machine_type" &&
+          config.assumptions[id as NumericAssumptionId] != null,
+      );
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Directly editable</p>
+              <h2 id={headingId}>
+                {componentHeading(component, "Assumptions")}
+              </h2>
+            </div>
+          </div>
+          <div className="assumption-grid">
+            {visible.map((id) => (
+              <AssumptionControl
+                key={id}
+                id={id}
+                config={config}
+                locked={state.lockedIds.includes(id)}
+                onChange={setAssumption}
+                onToggleLock={toggleLock}
+              />
+            ))}
+          </div>
+        </>,
+      );
+    }
+
+    if (component.type === "metric_strip") {
+      const eligible = result.ranked;
+      const cheapest = eligible.length
+        ? Math.min(...eligible.map((row) => row.product.price))
+        : null;
+      const quietest = eligible.length
+        ? Math.min(...eligible.map((row) => row.product.noiseDb))
+        : null;
+      return shell(
+        <>
+          <h2 id={headingId}>
+            {componentHeading(component, "The shortlist at a glance")}
+          </h2>
+          <div className="metric-strip">
+            <div>
+              <strong>{eligible.length}</strong>
+              <span>exact matches</span>
+            </div>
+            <div>
+              <strong>{cheapest == null ? "—" : `£${cheapest}`}</strong>
+              <span>lowest purchase price</span>
+            </div>
+            <div>
+              <strong>{quietest == null ? "—" : `${quietest} dB`}</strong>
+              <span>quietest spin</span>
+            </div>
+            <div>
+              <strong>{state.shortlisted.length}</strong>
+              <span>saved by you</span>
+            </div>
+          </div>
+        </>,
+      );
+    }
+
+    if (component.type === "ranked_cards")
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Ranked from retailer facts</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  rows.length
+                    ? "Machines in your current order"
+                    : "No exact-fit cards to show",
+                )}
+              </h2>
+            </div>
+          </div>
+          {result.ranked.length ? (
+            <div className="decision-grid">
+              {rows
+                .filter((row) => row.eligible)
+                .map((row) => (
+                  <DecisionCard
+                    key={row.product.id}
+                    row={row}
+                    config={config}
+                    state={state}
+                    onCalculate={openCalculation}
+                    onShortlist={toggleShortlist}
+                    onCompare={toggleCompare}
+                    onHide={hide}
+                    onView={onView}
+                  />
+                ))}
+            </div>
+          ) : (
+            <NoMatches
+              config={config}
+              hiddenIds={state.hidden}
+              onApply={setAssumption}
+            />
+          )}
+        </>,
+      );
+
+    if (component.type === "compact_table")
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Compact evidence</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  result.ranked.length
+                    ? "Products, compared line by line"
+                    : "Near matches with exact shortfalls",
+                )}
+              </h2>
+            </div>
+          </div>
+          <ComposedWasherTable
+            rows={rows}
+            component={component}
+            onCompare={toggleCompare}
+          />
+        </>,
+      );
+
+    if (component.type === "comparison")
+      return shell(
+        <>
+          <h2 id={headingId} className="sr-only">
+            {componentHeading(component, "Product comparison")}
+          </h2>
+          {state.compared.length < 2 ? (
+            <div className="comparison-empty">
+              <p className="eyebrow blue">Side by side</p>
+              <h3>Select two machines to compare</h3>
+              <p>Your selections stay with you when the page is recomposed.</p>
+              <div>
+                {rows.slice(0, 3).map((row) => (
+                  <button
+                    key={row.product.id}
+                    onClick={() => toggleCompare(row.product.id)}
+                  >
+                    {state.compared.includes(row.product.id)
+                      ? "Selected"
+                      : "Add"}{" "}
+                    {row.product.model}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Comparison
+              state={state}
+              rows={result.all}
+              onRemove={toggleCompare}
+              onClose={() =>
+                commit((current) => ({
+                  ...current,
+                  compared: [],
+                  selectedComparisonRowIds: null,
+                }))
+              }
+            />
+          )}
+        </>,
+      );
+
+    if (component.type === "scatter_plot") {
+      const plotMetrics = component.metricIds?.filter((id): id is MetricId =>
+        metricIds.includes(id as MetricId),
+      );
+      const plotConfig =
+        plotMetrics && plotMetrics.length >= 2
+          ? {
+              ...config,
+              plot: {
+                ...config.plot,
+                xMetricId: plotMetrics[0],
+                yMetricId: plotMetrics[1],
+              },
+            }
+          : config;
+      return shell(
+        <>
+          <h2 id={headingId} className="sr-only">
+            {componentHeading(component, "Cost and noise map")}
+          </h2>
+          {result.ranked.length ? (
+            <TradeoffPlot
+              rows={rows.filter((row) => row.eligible)}
+              config={plotConfig}
+              state={state}
+              onSelect={selectFromPlot}
+              onCompare={toggleCompare}
+            />
+          ) : (
+            <NoMatches
+              config={config}
+              hiddenIds={state.hidden}
+              onApply={setAssumption}
+            />
+          )}
+        </>,
+      );
+    }
+
+    if (component.type === "tradeoff_board") {
+      const candidates = result.ranked.length ? result.ranked : result.all;
+      const facets: Array<[string, Evaluation | undefined, string]> = [
+        [
+          "Lowest upfront",
+          [...candidates].sort((a, b) => a.product.price - b.product.price)[0],
+          "purchase_price",
+        ],
+        [
+          "Quietest spin",
+          [...candidates].sort(
+            (a, b) => a.product.noiseDb - b.product.noiseDb,
+          )[0],
+          "spin_noise_db",
+        ],
+        [
+          "Lowest ownership cost",
+          [...candidates].sort(
+            (a, b) => a.metrics.ownership_cost - b.metrics.ownership_cost,
+          )[0],
+          "ownership_cost",
+        ],
+      ];
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">What each choice gives up</p>
+              <h2 id={headingId}>
+                {componentHeading(component, "Tradeoffs in plain language")}
+              </h2>
+            </div>
+          </div>
+          <div className="tradeoff-board">
+            {facets.map(
+              ([label, row, metric]) =>
+                row && (
+                  <article key={label}>
+                    <span>{label}</span>
+                    <h3>
+                      {row.product.brand} {row.product.model}
+                    </h3>
+                    <strong>
+                      {metricValue(
+                        metric as MetricId,
+                        row.metrics[metric as MetricId],
+                      )}
+                    </strong>
+                    <p>
+                      {row.eligible
+                        ? "Meets every current requirement."
+                        : `Conditional only: ${row.reasons.join("; ")}.`}
+                    </p>
+                    <button onClick={() => onView(row.product)}>
+                      Inspect product
+                    </button>
+                  </article>
+                ),
+            )}
+          </div>
+        </>,
+      );
+    }
+
+    if (
+      component.type === "cost_breakdown" ||
+      component.type === "calculation_explanation"
+    ) {
+      const row = rows[0];
+      const breakdown = row
+        ? explainMetric(row, "ownership_cost", config)
+        : null;
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Retailer arithmetic</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  breakdown
+                    ? `${breakdown.model}: exact ownership total`
+                    : "Ownership cost breakdown",
+                )}
+              </h2>
+            </div>
+          </div>
+          {breakdown ? (
+            <div className="inline-calculation">
+              <strong>{breakdown.formattedResult}</strong>
+              {breakdown.steps.map((step) => (
+                <div key={step.id}>
+                  <span>{step.label}</span>
+                  <code>{step.expression}</code>
+                  <b>{step.formattedValue}</b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>No eligible machine is available for this calculation.</p>
+          )}
+        </>,
+      );
+    }
+
+    if (component.type === "delivery_calendar") {
+      const groups = new Map<number, Evaluation[]>();
+      for (const row of rows)
+        groups.set(row.product.deliveryDays, [
+          ...(groups.get(row.product.deliveryDays) ?? []),
+          row,
+        ]);
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Current retailer dates</p>
+              <h2 id={headingId}>
+                {componentHeading(component, "Delivery calendar")}
+              </h2>
+            </div>
+          </div>
+          <div className="delivery-calendar">
+            {[...groups.entries()]
+              .sort(([a], [b]) => a - b)
+              .map(([days, items]) => (
+                <article key={days}>
+                  <time>{deliveryDate(days)}</time>
+                  <strong>
+                    {days === 0 ? "Today" : `In ${days} ${plural(days, "day")}`}
+                  </strong>
+                  {items.map((row) => (
+                    <button
+                      key={row.product.id}
+                      onClick={() => onView(row.product)}
+                    >
+                      {row.product.model}
+                      <span>{row.eligible ? "Fits" : row.reasons[0]}</span>
+                    </button>
+                  ))}
+                </article>
+              ))}
+          </div>
+        </>,
+      );
+    }
+
+    if (component.type === "recommendation") {
+      const row = result.ranked[0] ?? rows[0];
+      return shell(
+        <>
+          <p className="eyebrow blue">Simple recommendation</p>
+          <h2 id={headingId}>
+            {componentHeading(
+              component,
+              result.ranked.length && row
+                ? `${row.product.brand} ${row.product.model} is the clearest current choice`
+                : "No machine safely fits this measurement",
+            )}
+          </h2>
+          {row && (
+            <div
+              className={`recommendation-card ${row.eligible ? "" : "is-conditional"}`}
+            >
+              <ProductImage product={row.product} />
+              <div>
+                <strong>
+                  {row.eligible
+                    ? "Why it leads"
+                    : "Closest conditional alternative"}
+                </strong>
+                <p>
+                  {row.eligible
+                    ? `It meets every requirement, costs £${row.product.price}, spins at ${row.product.noiseDb} dB and can arrive ${deliveryDate(row.product.deliveryDays).toLowerCase()}.`
+                    : `${row.product.brand} ${row.product.model} is not a fit: ${row.reasons.join("; ")}. Check the measurement or installation clearance before buying.`}
+                </p>
+                <button onClick={() => onView(row.product)}>
+                  View the full product
+                </button>
+              </div>
+            </div>
+          )}
+        </>,
+      );
+    }
+
+    if (component.type === "checklist")
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Before ordering</p>
+              <h2 id={headingId}>
+                {componentHeading(component, "Your requirement checklist")}
+              </h2>
+            </div>
+          </div>
+          <div className="requirement-checklist">
+            {config.requirements.map((requirement) => (
+              <div key={requirement.id}>
+                <Check size={16} />
+                <span>{requirement.id.replaceAll("_", " ")}</span>
+                <strong>
+                  {requirement.value == null
+                    ? "Required"
+                    : String(requirement.value)}
+                </strong>
+              </div>
+            ))}
+          </div>
+        </>,
+      );
+
+    if (component.type === "exclusions")
+      return shell(
+        <>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Exact reasons</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  `${result.excluded.length} excluded machines`,
+                )}
+              </h2>
+            </div>
+            {state.hidden.length > 0 && (
+              <button
+                onClick={() =>
+                  commit((current) => ({ ...current, hidden: [] }))
+                }
+              >
+                Restore {state.hidden.length} hidden
+              </button>
+            )}
+          </div>
+          <div className="excluded-grid">
+            {result.excluded.slice(0, component.limit ?? 12).map((row) => (
+              <button key={row.product.id} onClick={() => onView(row.product)}>
+                <span>
+                  {row.product.brand} {row.product.model}
+                </span>
+                <strong>{row.reasons.join(" · ")}</strong>
+              </button>
+            ))}
+          </div>
+        </>,
+      );
+
+    if (component.type === "relaxations")
+      return shell(
+        <>
+          <h2 id={headingId} className="sr-only">
+            {componentHeading(component, "Exact relaxations")}
+          </h2>
+          <NoMatches
+            config={config}
+            hiddenIds={state.hidden}
+            onApply={setAssumption}
+          />
+        </>,
+      );
+
+    return null;
+  };
+
+  return (
+    <main
+      id="decision-heading"
+      className="page-shell decision-page composed-page"
+      tabIndex={-1}
+    >
+      <div className="breadcrumbs">
+        Washing machines <span>/</span> Your composed workspace
+      </div>
+      <section className="decision-hero">
+        <div className="hero-copy">
+          <p className="eyebrow blue">Built around your request</p>
+          <h1>{config.title}</h1>
+          <p>
+            The facts and calculations remain Hearth &amp; Home’s. The
+            arrangement is shaped around you.
+          </p>
+        </div>
+        <div className="history-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              commit((current) => ({
+                ...current,
+                decision: null,
+                compared: [],
+                calculation: null,
+              }))
+            }
+          >
+            <RotateCcw />
+            Start over
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onUndo}
+            disabled={!state.past.length}
+          >
+            <ArrowLeft />
+            Undo
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRedo}
+            disabled={!state.future.length}
+          >
+            Redo
+            <ArrowRight />
+          </Button>
+        </div>
+      </section>
+      <div className="composition-grid">
+        {config.composition.map(renderComponent)}
+      </div>
+      {state.compared.length >= 2 &&
+        !config.composition.some(
+          (component) => component.type === "comparison",
+        ) && (
+          <Comparison
+            state={state}
+            rows={result.all}
+            onRemove={toggleCompare}
+            onClose={() =>
+              commit((current) => ({
+                ...current,
+                compared: [],
+                selectedComparisonRowIds: null,
+              }))
+            }
+          />
+        )}
+      {state.shortlisted.some(
+        (id) => !result.ranked.some((row) => row.product.id === id),
+      ) && (
+        <section className="shortlist-warning">
+          <h2>Saved, but no longer eligible</h2>
+          {result.all
+            .filter(
+              (row) =>
+                state.shortlisted.includes(row.product.id) && !row.eligible,
+            )
+            .map((row) => (
+              <p key={row.product.id}>
+                <strong>
+                  {row.product.brand} {row.product.model}
+                </strong>{" "}
+                · {row.reasons.join(", ")}
+              </p>
+            ))}
+        </section>
+      )}
+      <CalculationSheet
+        state={state}
+        rows={result.all}
+        onOpenChange={(open) =>
+          !open &&
+          replaceTransient((current) => ({ ...current, calculation: null }))
+        }
+      />
+      <footer className="decision-footer">
+        <p>
+          Costs are estimates based on Eco 40–60 specifications and your inputs.
+          All products and images are fictional demonstration data.
+        </p>
+        <LiveProofLinks />
+      </footer>
+    </main>
+  );
+}
+
 function DecisionTable({
   rows,
   config,
@@ -2149,24 +3094,44 @@ export default function Home() {
   const [state, setState] = useState<AppState>(blankState);
   const [hydrated, setHydrated] = useState(false);
   const [mcpAvailable, setMcpAvailable] = useState(false);
-  const [building, setBuilding] = useState(false);
+  const [building, setBuilding] = useState<{
+    phase: "checking" | "result";
+    count?: number;
+  } | null>(null);
+  const [recomposing, setRecomposing] = useState(false);
   const [toast, setToast] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [liveMessage, setLiveMessage] = useState("");
   const stateRef = useRef(state);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as AppState;
-        stateRef.current = migrateState(parsed);
-        setState(stateRef.current);
+    queueMicrotask(() => {
+      try {
+        const url = new URL(location.href);
+        const fresh = url.searchParams.get("fresh") === "1";
+        if (fresh) {
+          localStorage.removeItem(STORAGE_KEY);
+          url.searchParams.delete("fresh");
+          history.replaceState(
+            history.state,
+            "",
+            `${url.pathname}${url.search}${url.hash}`,
+          );
+          stateRef.current = blankState;
+          setState(blankState);
+        } else {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (!stored) throw new Error("No saved decision");
+          const parsed = JSON.parse(stored) as AppState;
+          stateRef.current = migrateState(parsed);
+          setState(stateRef.current);
+        }
+      } catch {
+        stateRef.current = blankState;
+        setState(blankState);
       }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-    setHydrated(true);
+      setHydrated(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -2254,6 +3219,38 @@ export default function Home() {
         ok: true,
         category: "washing_machines",
         currency: "GBP",
+        record_count: catalog.length,
+        records: catalog.map((product) => {
+          const evaluation = current.decision
+            ? evaluated?.all.find((row) => row.product.id === product.id)
+            : null;
+          return {
+            product_id: product.id,
+            brand: product.brand,
+            model: product.model,
+            machine_type: product.type,
+            purchase_price_gbp: product.price,
+            capacity_kg: product.capacityKg,
+            spin_noise_db: product.noiseDb,
+            energy_kwh_per_100_cycles: product.energyKwhPer100,
+            water_litres_per_cycle: product.waterLitresPerCycle,
+            dimensions_cm: {
+              width: product.widthCm,
+              installed_depth: product.installedDepthCm,
+              height: product.heightCm,
+            },
+            delivery_days: product.deliveryDays,
+            in_stock: product.inStock,
+            warranty_years: product.warrantyYears,
+            ...(evaluation
+              ? {
+                  eligible: evaluation.eligible,
+                  exclusion_reasons: evaluation.reasons,
+                  calculated_metrics: evaluation.metrics,
+                }
+              : {}),
+          };
+        }),
         assumptions,
         requirements: requirementIds,
         metrics: Object.entries(metricMeta).map(([id, meta]) => ({
@@ -2263,10 +3260,58 @@ export default function Home() {
           required_assumption_ids: meta.requires,
         })),
         comparison_row_ids: comparisonRowIds,
+        native_component_types: washerComponentTypes,
+        native_component_settings: {
+          ordered: true,
+          stable_component_ids: true,
+          supported_fields: [
+            "heading",
+            "variant",
+            "metric_ids",
+            "record_ids",
+            "assumption_ids",
+            "group_by",
+            "sort_metric_id",
+            "sort_direction",
+            "emphasized_record_ids",
+            "emphasized_metric_ids",
+            "width",
+            "limit",
+            "delay_minutes",
+            "show_only_differences",
+          ],
+          allowed_widths: ["full", "half"],
+          supported_grouping_ids: washerGroupingIds,
+        },
+        supported_composition_operations: [
+          "set_composition",
+          "add_component",
+          "remove_component",
+          "move_component",
+          "configure_component",
+        ],
+        supported_human_state_operations: [
+          "save_product",
+          "unsave_product",
+          "hide_product",
+          "restore_product",
+          "lock_assumption",
+          "unlock_assumption",
+        ],
+        calculation_contract: {
+          derived_metric_ids: metricIds.filter(
+            (id) => metricMeta[id].requires.length,
+          ),
+          authority:
+            "All arithmetic is calculated from site-owned product facts and shopper inputs.",
+        },
         standard_filters: current.decision
           ? null
           : { price: true, brand: true, machine_type: true, capacity: true },
         decision_view: current.decision,
+        current_composition: current.decision
+          ? serializeComposition(current.decision.composition)
+          : [],
         current_revision: current.revision,
         view_mode: current.viewMode,
         open_calculation: current.calculation
@@ -2277,7 +3322,14 @@ export default function Home() {
           : null,
         comparison_row_ids_selected: current.selectedComparisonRowIds,
         eligible_count: evaluated?.ranked.length ?? catalog.length,
-        products: compactRows(current),
+        products: current.decision ? compactRows(current) : [],
+        human_state: {
+          owner: "shopper",
+          locked_assumption_ids: current.lockedIds,
+          saved_product_ids: current.shortlisted,
+          hidden_product_ids: current.hidden,
+          compared_product_ids: current.compared,
+        },
         locked_assumption_ids: current.lockedIds,
         shortlisted_product_ids: current.shortlisted,
         hidden_product_ids: current.hidden,
@@ -2349,6 +3401,19 @@ export default function Home() {
       const sort = (input.primary_sort ?? {}) as Record<string, unknown>;
       const rawTradeoff = input.tradeoff as Record<string, unknown> | undefined;
       const rawPlot = input.plot as Record<string, unknown> | undefined;
+      let composition: NativeComponent[];
+      try {
+        composition = parseComposition(
+          input.components,
+          washerCompositionOptions,
+        );
+      } catch (error) {
+        return toolFailure(
+          "INVALID_COMPOSITION",
+          error instanceof Error ? error.message : "Invalid page composition.",
+          { valid_component_types: washerComponentTypes },
+        );
+      }
       const config: DecisionConfig = {
         id: current.decision?.id ?? "personal-washer-comparison",
         title: stringInput(input.title),
@@ -2393,20 +3458,30 @@ export default function Home() {
               yMetricId: "spin_noise_db",
               sizeMetricId: "capacity_kg",
             },
+        composition,
       };
       const invalid = validateConfig(config);
       if (invalid) return invalid;
       abortIfNeeded(signal);
-      setBuilding(true);
-      await new Promise((resolve) => setTimeout(resolve, 180));
+      const createdCount = evaluateCatalog(config, current.hidden).ranked
+        .length;
+      const reduceMotion = matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      setBuilding({ phase: "checking" });
+      if (!reduceMotion)
+        await new Promise((resolve) => setTimeout(resolve, 650));
+      setBuilding({ phase: "result", count: createdCount });
+      if (!reduceMotion)
+        await new Promise((resolve) => setTimeout(resolve, 300));
       try {
         abortIfNeeded(signal);
       } catch (error) {
-        setBuilding(false);
+        setBuilding(null);
         throw error;
       }
       if (stateRef.current.revision !== current.revision) {
-        setBuilding(false);
+        setBuilding(null);
         return toolFailure(
           "STALE_VIEW",
           "This page changed while the new view was being prepared. The assistant needs to read the current view before changing it.",
@@ -2422,8 +3497,7 @@ export default function Home() {
         viewMode: config.plot ? "plot" : "cards",
         calculation: null,
       }));
-      const createdCount = evaluateCatalog(config, next.hidden).ranked.length;
-      setBuilding(false);
+      setBuilding(null);
       setToast(true);
       setTimeout(() => setToast(false), 4200);
       setLiveMessage(
@@ -2441,6 +3515,7 @@ export default function Home() {
         exclusion_counts: evaluated.exclusions,
         products: compactRows(next),
         strong_tradeoff_product_ids: evaluated.strong,
+        current_composition: serializeComposition(config.composition),
         active_derived_metric_summaries: config.visibleMetricIds
           .filter((id) => metricMeta[id].requires.length)
           .map((id) => ({
@@ -2472,13 +3547,17 @@ export default function Home() {
       if (
         !Array.isArray(input.operations) ||
         !input.operations.length ||
-        input.operations.length > 12
+        input.operations.length > 16
       )
         return toolFailure(
           "INVALID_REQUIREMENT",
-          "Provide between one and twelve supported operations.",
+          "Provide between one and sixteen supported operations.",
         );
       let draft = cloneDecision(current.decision);
+      let lockedIds = [...current.lockedIds];
+      let shortlisted = [...current.shortlisted];
+      let hidden = [...current.hidden];
+      let compared = [...current.compared];
       const changed: string[] = [];
       if (
         (input.operations as unknown[]).some(
@@ -2491,7 +3570,91 @@ export default function Home() {
         );
       for (const raw of input.operations as Array<Record<string, unknown>>) {
         const operation = stringInput(raw.operation) || stringInput(raw.type);
-        if (operation === "set_title") {
+        if (operation === "set_composition") {
+          try {
+            draft.composition = parseComposition(
+              raw.components,
+              washerCompositionOptions,
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error
+                ? error.message
+                : "Invalid page composition.",
+              { valid_component_types: washerComponentTypes },
+            );
+          }
+          changed.push("composition");
+        } else if (operation === "add_component") {
+          try {
+            const component = parseNativeComponent(
+              raw.component,
+              washerCompositionOptions,
+            );
+            draft.composition = insertComponent(
+              draft.composition,
+              component,
+              raw.position == null ? undefined : Number(raw.position),
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error ? error.message : "Invalid component.",
+            );
+          }
+          changed.push("composition");
+        } else if (operation === "remove_component") {
+          try {
+            draft.composition = removeComponent(
+              draft.composition,
+              String(raw.component_id),
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error ? error.message : "Invalid component.",
+            );
+          }
+          changed.push("composition");
+        } else if (operation === "move_component") {
+          try {
+            draft.composition = moveComponent(
+              draft.composition,
+              String(raw.component_id),
+              Number(raw.position),
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error
+                ? error.message
+                : "Invalid component move.",
+            );
+          }
+          changed.push("composition");
+        } else if (operation === "configure_component") {
+          try {
+            const componentId = String(raw.component_id);
+            const parsed = parseNativeComponentPatch(
+              raw.component,
+              washerCompositionOptions,
+            );
+            draft.composition = configureComponent(
+              draft.composition,
+              componentId,
+              parsed,
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error
+                ? error.message
+                : "Invalid component configuration.",
+            );
+          }
+          changed.push("composition");
+        } else if (operation === "set_title") {
           draft.title = stringInput(raw.title) || stringInput(raw.value);
           changed.push("title");
         } else if (operation === "set_assumption") {
@@ -2502,7 +3665,7 @@ export default function Home() {
               `Unsupported assumption “${id}”.`,
               { valid_ids: assumptionIds },
             );
-          if (current.lockedIds.includes(id))
+          if (lockedIds.includes(id))
             return toolFailure(
               "LOCKED_ASSUMPTION",
               `${assumptionMeta[id].label} is locked by the shopper and cannot be changed.`,
@@ -2516,7 +3679,7 @@ export default function Home() {
           changed.push(id);
         } else if (operation === "remove_assumption") {
           const id = String(raw.assumption_id) as AssumptionId;
-          if (current.lockedIds.includes(id))
+          if (lockedIds.includes(id))
             return toolFailure(
               "LOCKED_ASSUMPTION",
               `${assumptionMeta[id].label} is locked by the shopper and cannot be removed.`,
@@ -2591,6 +3754,46 @@ export default function Home() {
               : undefined,
           };
           changed.push("plot");
+        } else if (
+          operation === "save_product" ||
+          operation === "unsave_product" ||
+          operation === "hide_product" ||
+          operation === "restore_product"
+        ) {
+          const productId = String(raw.product_id);
+          if (!productById.has(productId))
+            return toolFailure(
+              "UNKNOWN_PRODUCT",
+              `Unknown product “${productId}”.`,
+              {
+                valid_ids: catalog.map((product) => product.id),
+              },
+            );
+          if (operation === "save_product")
+            shortlisted = [...new Set([...shortlisted, productId])];
+          if (operation === "unsave_product")
+            shortlisted = shortlisted.filter((id) => id !== productId);
+          if (operation === "hide_product") {
+            hidden = [...new Set([...hidden, productId])];
+            compared = compared.filter((id) => id !== productId);
+          }
+          if (operation === "restore_product")
+            hidden = hidden.filter((id) => id !== productId);
+          changed.push(productId);
+        } else if (
+          operation === "lock_assumption" ||
+          operation === "unlock_assumption"
+        ) {
+          const assumptionId = String(raw.assumption_id) as AssumptionId;
+          if (!assumptionIds.includes(assumptionId))
+            return toolFailure(
+              "UNSUPPORTED_ASSUMPTION",
+              `Unsupported assumption “${assumptionId}”.`,
+            );
+          if (operation === "lock_assumption")
+            lockedIds = [...new Set([...lockedIds, assumptionId])];
+          else lockedIds = lockedIds.filter((id) => id !== assumptionId);
+          changed.push(assumptionId);
         } else
           return toolFailure(
             "INVALID_REQUIREMENT",
@@ -2600,12 +3803,38 @@ export default function Home() {
       const invalid = validateConfig(draft);
       if (invalid) return invalid;
       abortIfNeeded(signal);
-      const next = commit((s) => ({ ...s, decision: draft }));
+      const unchanged =
+        JSON.stringify(draft) === JSON.stringify(current.decision) &&
+        JSON.stringify(lockedIds) === JSON.stringify(current.lockedIds) &&
+        JSON.stringify(shortlisted) === JSON.stringify(current.shortlisted) &&
+        JSON.stringify(hidden) === JSON.stringify(current.hidden) &&
+        JSON.stringify(compared) === JSON.stringify(current.compared);
+      if (unchanged)
+        return jsonSafe({
+          ok: true,
+          revision: current.revision,
+          changed_controls: [],
+          current_composition: serializeComposition(draft.composition),
+        });
+      setRecomposing(true);
+      const next = commit((s) => ({
+        ...s,
+        decision: draft,
+        lockedIds,
+        shortlisted,
+        hidden,
+        compared,
+        selectedComparisonRowIds:
+          compared.length < 2 ? null : s.selectedComparisonRowIds,
+      }));
       const updatedCount = evaluateCatalog(draft, next.hidden).ranked.length;
       setLiveMessage(
         `Decision view updated. ${updatedCount} ${plural(updatedCount, "machine")} ${updatedCount === 1 ? "meets" : "meet"} every requirement.`,
       );
       await delayPaint();
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
+        await new Promise((resolve) => setTimeout(resolve, 420));
+      setRecomposing(false);
       highlightAgentChanges(changed);
       const evaluated = evaluateCatalog(draft, next.hidden);
       return jsonSafe({
@@ -2616,6 +3845,7 @@ export default function Home() {
         exclusion_counts: evaluated.exclusions,
         products: compactRows(next),
         strong_tradeoff_product_ids: evaluated.strong,
+        current_composition: serializeComposition(draft.composition),
       });
     };
 
@@ -2786,8 +4016,12 @@ export default function Home() {
 
   const debug =
     hydrated && new URLSearchParams(location.search).get("debug") === "1";
+  if (!hydrated)
+    return <div className="route-hydration-shell" aria-busy="true" />;
   return (
-    <div className={building ? "app is-building" : "app"}>
+    <div
+      className={`app${building ? " is-building" : ""}${recomposing ? " is-recomposing" : ""}`}
+    >
       <Header mcpAvailable={mcpAvailable} />
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {liveMessage}
@@ -2795,7 +4029,9 @@ export default function Home() {
       {building && (
         <output className="building-pill">
           <span />
-          Building your comparison…
+          {building.phase === "checking"
+            ? "Checking 28 machines against your home…"
+            : `${building.count ?? 0} fit.`}
         </output>
       )}
       {toast && (
@@ -2811,7 +4047,17 @@ export default function Home() {
           </button>
         </div>
       )}
-      {state.decision ? (
+      {state.decision?.composition?.length ? (
+        <ComposedDecisionPage
+          state={state}
+          commit={commit}
+          replaceTransient={replaceTransient}
+          onView={setSelectedProduct}
+          announce={setLiveMessage}
+          onUndo={undo}
+          onRedo={redo}
+        />
+      ) : state.decision ? (
         <DecisionPage
           state={state}
           commit={commit}

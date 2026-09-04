@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   Check,
   ChevronDown,
@@ -17,13 +17,13 @@ import {
   Redo2,
   RotateCcw,
   Search,
-  Sparkles,
   Undo2,
   X,
-} from "lucide-react";
+} from 'lucide-react';
 import {
   articleById,
   articles,
+  canonicalEdition,
   clusterById,
   clusters,
   compareCoverage,
@@ -40,25 +40,63 @@ import {
   type EditionSelection,
   type MinimumId,
   type TopicId,
-} from "@/lib/edition";
+} from '@/lib/edition';
 import {
   registerEditionTools,
   type EditionWebMcpHandlers,
-} from "@/lib/edition-webmcp";
+} from '@/lib/edition-webmcp';
+import { AssistantPromptPanel } from '@/app/assistant-prompt-panel';
+import {
+  configureComponent,
+  editionComponentTypes,
+  editionGroupingIds,
+  insertComponent,
+  moveComponent,
+  parseComposition,
+  parseNativeComponent,
+  parseNativeComponentPatch,
+  removeComponent,
+  serializeComposition,
+  type NativeComponent,
+} from '@/lib/composition';
 
-const STORAGE_KEY = "the-current-edition-v1";
+const STORAGE_KEY = 'the-current-edition-v1';
 const SITE_ROUTES = {
-  washers: "/",
-  journeys: "/journeys",
-  edition: "/edition",
+  washers: '/',
+  journeys: '/journeys',
+  edition: '/edition',
 } as const;
 const topicIds = Object.keys(topicLabels) as TopicId[];
-const minimumIds: MinimumId[] = ["uk", "world", "science", "local"];
+const minimumIds: MinimumId[] = ['uk', 'world', 'science', 'local'];
+const editionRecordIds = [
+  ...clusters.map((cluster) => cluster.id),
+  ...articles.map((article) => article.id),
+];
+const editionCompositionOptions = {
+  allowedTypes: editionComponentTypes,
+  allowedMetricIds: [
+    'reading_seconds',
+    'priority',
+    'new_fact_count',
+    'coverage_count',
+    'publication_count',
+  ],
+  allowedRecordIds: editionRecordIds,
+  allowedAssumptionIds: [
+    'budget_seconds',
+    'topic_policies',
+    'minimums',
+    'original_reporting_weight',
+    'background_mode',
+  ],
+  allowedGroupIds: editionGroupingIds,
+  maximumRecords: editionRecordIds.length,
+};
 type EditionFieldId =
-  | "budget_seconds"
-  | "minimums"
-  | "original_reporting_weight"
-  | "background_mode";
+  | 'budget_seconds'
+  | 'minimums'
+  | 'original_reporting_weight'
+  | 'background_mode';
 type ComparisonState = {
   clusterId: string;
   articleIds: string[] | null;
@@ -98,9 +136,9 @@ const snapshotOf = (state: AppState): Snapshot => ({
   lockedTopics: state.lockedTopics,
   pinnedClusters: state.pinnedClusters,
   hiddenPublications: state.hiddenPublications,
-  comparison: state.comparison,
-  reasonClusterId: state.reasonClusterId,
-  expandedClusters: state.expandedClusters,
+  comparison: null,
+  reasonClusterId: null,
+  expandedClusters: [],
 });
 const jsonSafe = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const cloneConfig = (config: EditionConfig): EditionConfig => jsonSafe(config);
@@ -119,12 +157,12 @@ const handleDialogKey = (
   event: ReactKeyboardEvent<HTMLDialogElement>,
   close: () => void,
 ) => {
-  if (event.key === "Escape") {
+  if (event.key === 'Escape') {
     event.preventDefault();
     close();
     return;
   }
-  if (event.key !== "Tab") return;
+  if (event.key !== 'Tab') return;
   const focusable = Array.from(
     event.currentTarget.querySelectorAll<HTMLElement>(
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -144,15 +182,30 @@ const handleDialogKey = (
 
 function restoreState(raw: Partial<AppState>): AppState {
   const publications = new Set(articles.map((article) => article.publication));
+  const restoreEdition = (edition: EditionConfig | null | undefined) => {
+    if (!edition) return null;
+    let composition = canonicalEdition.composition;
+    try {
+      composition = parseComposition(
+        Array.isArray(edition.composition)
+          ? edition.composition
+          : canonicalEdition.composition,
+        editionCompositionOptions,
+      );
+    } catch {
+      composition = canonicalEdition.composition;
+    }
+    return { ...edition, composition };
+  };
   const restore = (item: Partial<Snapshot> | undefined): Snapshot => ({
-    edition: item?.edition ?? null,
+    edition: restoreEdition(item?.edition),
     lockedFields:
       item?.lockedFields?.filter((id) =>
         [
-          "budget_seconds",
-          "minimums",
-          "original_reporting_weight",
-          "background_mode",
+          'budget_seconds',
+          'minimums',
+          'original_reporting_weight',
+          'background_mode',
         ].includes(id),
       ) ?? [],
     lockedTopics:
@@ -174,24 +227,29 @@ function restoreState(raw: Partial<AppState>): AppState {
   });
   return {
     ...restore(raw),
-    revision: typeof raw.revision === "number" ? raw.revision : 0,
+    revision: typeof raw.revision === 'number' ? raw.revision : 0,
     past: (raw.past ?? []).map((item) => restore(item)),
     future: (raw.future ?? []).map((item) => restore(item)),
   };
 }
 
 function validateConfig(config: EditionConfig) {
+  try {
+    parseComposition(config.composition, editionCompositionOptions);
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Invalid page composition.';
+  }
   if (
     !Number.isInteger(config.budgetSeconds) ||
     config.budgetSeconds < 300 ||
     config.budgetSeconds > 1200
   )
-    return "Reading budget must be 300–1,200 seconds.";
+    return 'Reading budget must be 300–1,200 seconds.';
   if (
     config.excludedTopicIds.some((id) => !topicIds.includes(id)) ||
     new Set(config.excludedTopicIds).size !== config.excludedTopicIds.length
   )
-    return "Topic policy must use unique supported topic IDs.";
+    return 'Topic policy must use unique supported topic IDs.';
   if (
     minimumIds.some(
       (id) =>
@@ -200,24 +258,18 @@ function validateConfig(config: EditionConfig) {
         config.minimums[id] > 5,
     )
   )
-    return "Topic minimums must be whole numbers from 0 to 5.";
+    return 'Topic minimums must be whole numbers from 0 to 5.';
   if (
     !Number.isFinite(config.originalReportingWeight) ||
     config.originalReportingWeight < 0 ||
     config.originalReportingWeight > 1
   )
-    return "Original-reporting preference must be between 0 and 1.";
+    return 'Original-reporting preference must be between 0 and 1.';
   if (
-    !["omit", "include_free", "include_counted"].includes(config.backgroundMode)
+    !['omit', 'include_free', 'include_counted'].includes(config.backgroundMode)
   )
-    return "Choose a supported background mode.";
+    return 'Choose a supported background mode.';
   return null;
-}
-
-function longReadingTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60),
-    remainder = seconds % 60;
-  return `${minutes} ${minutes === 1 ? "minute" : "minutes"}${remainder ? ` ${remainder} ${remainder === 1 ? "second" : "seconds"}` : ""}`;
 }
 
 function SiteLinks() {
@@ -250,7 +302,18 @@ function CurrentHeader({ mcpAvailable }: { mcpAvailable: boolean }) {
       </header>
       {mcpAvailable && (
         <div className="tc-assistant">
-          <Sparkles size={13} /> Works with your browser assistant
+          <AssistantPromptPanel
+            className="assistant-prompt-current"
+            prompts={[
+              'Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.',
+              'Replace the edition with a chronological timeline of the tidal-energy story. Include only moments when a new verified fact appeared.',
+              'Turn the timeline into a provenance map showing who reported each fact first, which publications repeated it, and where the evidence changed.',
+            ]}
+            links={[
+              { href: '/', label: 'Try Hearth & Home' },
+              { href: '/journeys', label: 'Try Wayline' },
+            ]}
+          />
         </div>
       )}
     </>
@@ -276,28 +339,28 @@ function StoryImage({
   compact?: boolean;
 }) {
   const image =
-    clusterId === "selene-ice"
+    clusterId === 'selene-ice'
       ? {
-          src: "/edition/lunar-observation-control-room.png",
-          alt: "A researcher studies lunar imagery in an observation control room",
+          src: '/edition/lunar-observation-control-room.png',
+          alt: 'A researcher studies lunar imagery in an observation control room',
         }
-      : clusterId === "solmere-tide"
+      : clusterId === 'solmere-tide'
         ? {
-            src: "/edition/tidal-energy-harbour.png",
-            alt: "A maintenance vessel works beside tidal turbines in a British harbour",
+            src: '/edition/tidal-energy-harbour.png',
+            alt: 'A maintenance vessel works beside tidal turbines in a British harbour',
           }
         : null;
   if (!image) return null;
   return (
-    <figure className={`tc-story-image ${compact ? "compact" : ""}`}>
+    <figure className={`tc-story-image ${compact ? 'compact' : ''}`}>
       <Image
         src={image.src}
         alt={image.alt}
         fill
         sizes={
           compact
-            ? "(max-width: 720px) 100vw, 300px"
-            : "(max-width: 960px) 100vw, 680px"
+            ? '(max-width: 720px) 100vw, 300px'
+            : '(max-width: 960px) 100vw, 680px'
         }
       />
     </figure>
@@ -305,23 +368,23 @@ function StoryImage({
 }
 
 function StandardPage() {
-  const [topic, setTopic] = useState<TopicId | "all">("all");
+  const [topic, setTopic] = useState<TopicId | 'all'>('all');
   const ordered = useMemo(
     () =>
       [...articles]
         .filter(
           (article) =>
-            topic === "all" ||
+            topic === 'all' ||
             clusterById.get(article.clusterId)?.topicId === topic,
         )
         .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)),
     [topic],
   );
   const lead =
-    topic === "all" ? articleById.get("sel-04")! : (ordered[0] ?? articles[0]);
+    topic === 'all' ? articleById.get('sel-04')! : (ordered[0] ?? articles[0]);
   const supporting =
-    topic === "all"
-      ? ["sol-05", "mar-03", "cal-03", "qua-03"]
+    topic === 'all'
+      ? ['sol-05', 'mar-03', 'cal-03', 'qua-03']
           .map((id) => articleById.get(id)!)
           .filter(Boolean)
       : ordered.filter((article) => article.id !== lead.id).slice(0, 4);
@@ -335,17 +398,17 @@ function StandardPage() {
       <nav className="tc-topic-nav" aria-label="Topics">
         <button
           type="button"
-          className={topic === "all" ? "active" : ""}
-          onClick={() => setTopic("all")}
+          className={topic === 'all' ? 'active' : ''}
+          onClick={() => setTopic('all')}
         >
           Top stories
         </button>
         {topicIds
-          .filter((id) => id !== "celebrity")
+          .filter((id) => id !== 'celebrity')
           .map((id) => (
             <button
               type="button"
-              className={topic === id ? "active" : ""}
+              className={topic === id ? 'active' : ''}
               key={id}
               onClick={() => setTopic(id)}
             >
@@ -434,7 +497,7 @@ function FieldLock({
             : [...current.lockedFields, field],
         }))
       }
-      aria-label={`${locked ? "Unlock" : "Lock"} ${label}`}
+      aria-label={`${locked ? 'Unlock' : 'Lock'} ${label}`}
     >
       {locked ? <Lock size={13} /> : <LockOpen size={13} />}
     </button>
@@ -465,7 +528,7 @@ function EditionControls({
       </div>
       <section
         className={
-          state.lockedFields.includes("budget_seconds") ? "is-locked" : ""
+          state.lockedFields.includes('budget_seconds') ? 'is-locked' : ''
         }
       >
         <div className="tc-control-title">
@@ -481,7 +544,7 @@ function EditionControls({
           {[5, 10, 15, 20].map((minutes) => (
             <button
               type="button"
-              className={config.budgetSeconds === minutes * 60 ? "active" : ""}
+              className={config.budgetSeconds === minutes * 60 ? 'active' : ''}
               key={minutes}
               onClick={() =>
                 update(
@@ -523,7 +586,7 @@ function EditionControls({
             const excluded = config.excludedTopicIds.includes(id),
               locked = state.lockedTopics.includes(id);
             return (
-              <div key={id} className={locked ? "is-locked" : ""}>
+              <div key={id} className={locked ? 'is-locked' : ''}>
                 <label>
                   <input
                     type="checkbox"
@@ -538,7 +601,7 @@ function EditionControls({
                               )
                             : [...config.excludedTopicIds, id],
                         },
-                        `${topicLabels[id]} ${excluded ? "included" : "excluded"}`,
+                        `${topicLabels[id]} ${excluded ? 'included' : 'excluded'}`,
                       )
                     }
                   />
@@ -554,7 +617,7 @@ function EditionControls({
                         : [...current.lockedTopics, id],
                     }))
                   }
-                  aria-label={`${locked ? "Unlock" : "Lock"} ${topicLabels[id]}`}
+                  aria-label={`${locked ? 'Unlock' : 'Lock'} ${topicLabels[id]}`}
                 >
                   {locked ? <Lock size={12} /> : <LockOpen size={12} />}
                 </button>
@@ -564,7 +627,7 @@ function EditionControls({
         </div>
       </section>
       <section
-        className={state.lockedFields.includes("minimums") ? "is-locked" : ""}
+        className={state.lockedFields.includes('minimums') ? 'is-locked' : ''}
       >
         <div className="tc-control-title">
           <h3>Minimum coverage</h3>
@@ -606,9 +669,9 @@ function EditionControls({
       </section>
       <section
         className={
-          state.lockedFields.includes("original_reporting_weight")
-            ? "is-locked"
-            : ""
+          state.lockedFields.includes('original_reporting_weight')
+            ? 'is-locked'
+            : ''
         }
       >
         <div className="tc-control-title">
@@ -637,7 +700,7 @@ function EditionControls({
                 ...config,
                 originalReportingWeight: Number(event.target.value) / 100,
               },
-              "Reporting preference updated",
+              'Reporting preference updated',
             )
           }
         />
@@ -648,7 +711,7 @@ function EditionControls({
       </section>
       <section
         className={
-          state.lockedFields.includes("background_mode") ? "is-locked" : ""
+          state.lockedFields.includes('background_mode') ? 'is-locked' : ''
         }
       >
         <div className="tc-control-title">
@@ -669,7 +732,7 @@ function EditionControls({
                 ...config,
                 backgroundMode: event.target.value as BackgroundMode,
               },
-              "Background policy updated",
+              'Background policy updated',
             )
           }
         >
@@ -705,13 +768,13 @@ function StoryCard({
     (article) => !state.hiddenPublications.includes(article.publication),
   );
   const collapsedCount = candidate.related.filter(
-    (article) => article.role !== "background",
+    (article) => article.role !== 'background',
   ).length;
   const expanded = state.expandedClusters.includes(candidate.cluster.id);
   return (
     <article className="tc-edition-story" id={`story-${candidate.cluster.id}`}>
       <div className="tc-story-number">
-        {String(index + 1).padStart(2, "0")}
+        {String(index + 1).padStart(2, '0')}
       </div>
       <div className="tc-story-content">
         <div className="tc-story-topline">
@@ -734,8 +797,8 @@ function StoryCard({
         <div className="tc-source-line">
           <span className="tc-original">
             {candidate.representative.originalReporting
-              ? "Original reporting"
-              : "Verified follow-up"}
+              ? 'Original reporting'
+              : 'Verified follow-up'}
           </span>
           <span>{candidate.representative.publication}</span>
           <span>{candidate.representative.reporter}</span>
@@ -744,8 +807,8 @@ function StoryCard({
         <div className="tc-collapse-note">
           <FileStack size={15} />
           <span>
-            {collapsedCount} substantially similar{" "}
-            {collapsedCount === 1 ? "article" : "articles"} collapsed.
+            {collapsedCount} substantially similar{' '}
+            {collapsedCount === 1 ? 'article' : 'articles'} collapsed.
           </span>
           <button
             type="button"
@@ -760,7 +823,7 @@ function StoryCard({
               }))
             }
           >
-            {expanded ? "Hide" : "View"} related coverage{" "}
+            {expanded ? 'Hide' : 'View'} related coverage{' '}
             <ChevronDown size={14} />
           </button>
         </div>
@@ -770,11 +833,11 @@ function StoryCard({
               <article key={article.id}>
                 <div>
                   <span>
-                    {article.publication} · {article.role.replace("_", " ")}
+                    {article.publication} · {article.role.replace('_', ' ')}
                   </span>
                   <strong>{article.headline}</strong>
                   <small>
-                    {formatPublished(article.publishedAt)} ·{" "}
+                    {formatPublished(article.publishedAt)} ·{' '}
                     {formatReadingTime(article.readSeconds)}
                   </small>
                 </div>
@@ -805,7 +868,7 @@ function StoryCard({
         <div className="tc-story-actions">
           <button
             type="button"
-            className={pinned ? "active" : ""}
+            className={pinned ? 'active' : ''}
             onClick={() =>
               commit((current) => ({
                 ...current,
@@ -818,7 +881,7 @@ function StoryCard({
             }
           >
             <Pin size={14} />
-            {pinned ? "Pinned" : "Pin story"}
+            {pinned ? 'Pinned' : 'Pin story'}
           </button>
           <button type="button" onClick={openComparison}>
             <FileStack size={14} />
@@ -888,8 +951,8 @@ function ReasonDialog({
             <dt>Original-reporting status</dt>
             <dd>
               {reason.original_reporting
-                ? "Original report"
-                : "Verified follow-up"}
+                ? 'Original report'
+                : 'Verified follow-up'}
             </dd>
           </div>
           <div>
@@ -899,7 +962,7 @@ function ReasonDialog({
           <div>
             <dt>Required topics preserved</dt>
             <dd>
-              {reason.matched_minimum_ids.join(", ") || "Not quota-dependent"}
+              {reason.matched_minimum_ids.join(', ') || 'Not quota-dependent'}
             </dd>
           </div>
         </dl>
@@ -913,7 +976,7 @@ function ReasonDialog({
           <p>
             {reason.primary_original_report
               ? `${reason.primary_original_report.publication} · ${reason.primary_original_report.reporter}`
-              : "No original report in the visible dataset"}
+              : 'No original report in the visible dataset'}
           </p>
         </section>
       </dialog>
@@ -933,7 +996,7 @@ function CoverageDialog({
     .filter(
       (article) =>
         article.clusterId === state.comparison!.clusterId &&
-        article.role !== "background" &&
+        article.role !== 'background' &&
         !state.hiddenPublications.includes(article.publication),
     )
     .map((article) => article.id);
@@ -983,8 +1046,8 @@ function CoverageDialog({
               <div className="tc-provenance-badges">
                 <span>
                   {article.originalReporting
-                    ? "Original reporting"
-                    : article.role.replace("_", " ")}
+                    ? 'Original reporting'
+                    : article.role.replace('_', ' ')}
                 </span>
                 <span>{formatReadingTime(article.readSeconds)}</span>
               </div>
@@ -1054,16 +1117,16 @@ function DecisionPage({
           <p className="tc-eyebrow">Your finite edition</p>
           <h1 tabIndex={-1} id="tc-edition-heading">
             {selection.feasible
-              ? `Your ${longReadingTime(selection.usedSeconds)} edition.`
-              : "Your edition cannot fit these choices yet."}
+              ? `Your ${formatReadingTime(selection.usedSeconds)} edition.`
+              : 'Your edition cannot fit these choices yet.'}
           </h1>
           <p>
             {selection.feasible ? (
               <>
                 <strong>
-                  {articles.length} articles became {selection.selected.length}{" "}
+                  {articles.length} articles became {selection.selected.length}{' '}
                   developments worth {formatReadingTime(selection.usedSeconds)}.
-                </strong>{" "}
+                </strong>{' '}
                 Repeated coverage is collapsed; original reporting and genuinely
                 new facts stay visible.
               </>
@@ -1093,7 +1156,7 @@ function DecisionPage({
         <div>
           <span>Reading budget</span>
           <strong>
-            {formatReadingTime(selection.usedSeconds)} /{" "}
+            {formatReadingTime(selection.usedSeconds)} /{' '}
             {formatReadingTime(config.budgetSeconds)}
           </strong>
         </div>
@@ -1103,7 +1166,7 @@ function DecisionPage({
         <p>
           {selection.remainingSeconds
             ? `${formatReadingTime(selection.remainingSeconds)} left`
-            : "Budget fully used"}
+            : 'Budget fully used'}
         </p>
       </section>
       <div className="tc-decision-layout">
@@ -1116,7 +1179,7 @@ function DecisionPage({
             <div>
               <p className="tc-eyebrow">Genuinely new first</p>
               <h2 id="tc-stream-title">
-                {selection.selected.length} developments, not {articles.length}{" "}
+                {selection.selected.length} developments, not {articles.length}{' '}
                 headlines
               </h2>
             </div>
@@ -1126,7 +1189,7 @@ function DecisionPage({
                 {minimumIds
                   .filter((id) => config.minimums[id] > 0)
                   .map((id) => topicLabels[id])
-                  .join(" · ")}{" "}
+                  .join(' · ')}{' '}
                 preserved
               </span>
             ) : null}
@@ -1186,6 +1249,12 @@ function DecisionPage({
                       commit((current) => ({
                         ...current,
                         edition: { ...current.edition!, ...relaxation.patch },
+                        hiddenPublications: relaxation.restorePublications
+                          ? []
+                          : current.hiddenPublications,
+                        pinnedClusters: relaxation.unpinAll
+                          ? []
+                          : current.pinnedClusters,
                       }))
                     }
                   >
@@ -1202,10 +1271,10 @@ function DecisionPage({
         <div className="tc-hidden">
           <EyeOff size={15} />
           <span>
-            {state.hiddenPublications.length} hidden{" "}
+            {state.hiddenPublications.length} hidden{' '}
             {state.hiddenPublications.length === 1
-              ? "publication"
-              : "publications"}
+              ? 'publication'
+              : 'publications'}
           </span>
           <button
             type="button"
@@ -1253,19 +1322,700 @@ function DecisionPage({
   );
 }
 
+function clusterForComponent(component: NativeComponent) {
+  for (const id of component.recordIds ?? []) {
+    const cluster = clusterById.get(id);
+    if (cluster) return cluster;
+    const article = articleById.get(id);
+    if (article) return clusterById.get(article.clusterId) ?? null;
+  }
+  return clusterById.get('solmere-tide') ?? clusters[0] ?? null;
+}
+
+function CurrentTimeline({ component }: { component: NativeComponent }) {
+  const cluster = clusterForComponent(component);
+  if (!cluster) return null;
+  const timeline = articles
+    .filter((article) => article.clusterId === cluster.id)
+    .filter((article) =>
+      component.variant === 'new_only'
+        ? article.introducedFactIds.length > 0 && article.role !== 'background'
+        : component.type === 'background_material'
+          ? article.role === 'background'
+          : true,
+    )
+    .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+  const facts = new Map(cluster.facts.map((fact) => [fact.id, fact.text]));
+  return (
+    <div className="tc-native-timeline">
+      {timeline.map((article) => (
+        <article key={article.id}>
+          <time>{formatPublished(article.publishedAt)}</time>
+          <span className={article.originalReporting ? 'is-original' : ''}>
+            {article.originalReporting
+              ? 'Original'
+              : article.role.replaceAll('_', ' ')}
+          </span>
+          <h3>{article.headline}</h3>
+          <p>
+            {article.publication} · {article.reporter}
+          </p>
+          {article.introducedFactIds.length > 0 && (
+            <ul>
+              {article.introducedFactIds.map((id) => (
+                <li key={id}>{facts.get(id)}</li>
+              ))}
+            </ul>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ProvenanceMap({ component }: { component: NativeComponent }) {
+  const cluster = clusterForComponent(component);
+  if (!cluster) return null;
+  const coverage = articles
+    .filter((article) => article.clusterId === cluster.id)
+    .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+  return (
+    <div className="tc-provenance-map">
+      {cluster.facts.map((fact) => {
+        const carriers = coverage.filter((article) =>
+          article.factIds.includes(fact.id),
+        );
+        const first = carriers[0];
+        return (
+          <article key={fact.id}>
+            <span>{fact.id}</span>
+            <h3>{fact.text}</h3>
+            <div className="tc-provenance-first">
+              <strong>First in this dataset</strong>
+              <p>
+                {first
+                  ? `${first.publication} · ${first.reporter} · ${formatPublished(first.publishedAt)}`
+                  : 'No visible source'}
+              </p>
+            </div>
+            <div>
+              <strong>Repeated by</strong>
+              <p>
+                {carriers
+                  .slice(1)
+                  .map((article) => article.publication)
+                  .join(' · ') || 'No later repetition'}
+              </p>
+            </div>
+            <small>
+              {carriers.some((article) =>
+                article.introducedFactIds.includes(fact.id),
+              )
+                ? 'Evidence enters the record here.'
+                : 'Background fact retained from earlier reporting.'}
+            </small>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function ComposedEditionPage({
+  state,
+  commit,
+  replaceTransient,
+  undo,
+  redo,
+  announce,
+}: {
+  state: AppState;
+  commit: (fn: (state: AppState) => AppState) => AppState;
+  replaceTransient: (fn: (state: AppState) => AppState) => AppState;
+  undo: () => void;
+  redo: () => void;
+  announce: (message: string) => void;
+}) {
+  const config = state.edition!;
+  const selection = useMemo(
+    () => selectEdition(config, state.pinnedClusters, state.hiddenPublications),
+    [config, state.hiddenPublications, state.pinnedClusters],
+  );
+  const relaxations = editionRelaxations(
+    config,
+    state.pinnedClusters,
+    state.hiddenPublications,
+  );
+  const openReason = (clusterId: string) =>
+    replaceTransient((current) => ({
+      ...current,
+      reasonClusterId: clusterId,
+      comparison: null,
+    }));
+  const openComparison = (clusterId: string) =>
+    replaceTransient((current) => ({
+      ...current,
+      comparison: { clusterId, articleIds: null },
+      reasonClusterId: null,
+    }));
+  const componentHeading = (component: NativeComponent, fallback: string) =>
+    component.heading ?? fallback;
+  const renderComponent = (component: NativeComponent) => {
+    const headingId = `tc-component-${component.id}`;
+    const focus = clusterForComponent(component);
+    const shell = (content: React.ReactNode, extra = '') => (
+      <section
+        key={component.id}
+        className={`tc-composed-block tc-${component.type} ${component.width === 'half' ? 'tc-half' : ''} ${extra}`}
+        data-component-id={component.id}
+        data-component-type={component.type}
+        aria-labelledby={headingId}
+      >
+        {content}
+      </section>
+    );
+    if (component.type === 'decision_summary')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">A finite, source-preserving edition</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  selection.feasible
+                    ? `${articles.length} headlines became ${selection.selected.length} developments`
+                    : 'These choices do not fit yet',
+                )}
+              </h2>
+            </div>
+            <strong>
+              {selection.feasible
+                ? formatReadingTime(selection.usedSeconds)
+                : '—'}
+            </strong>
+          </div>
+          <p>
+            {selection.feasible
+              ? `Repeated coverage is merged. ${selection.selected.length} distinct developments use ${formatReadingTime(selection.usedSeconds)} of the ${formatReadingTime(config.budgetSeconds)} budget.`
+              : 'No topic, pin, hidden source or minimum was silently discarded.'}
+          </p>
+          <div className="tc-state-pills">
+            <span>{state.pinnedClusters.length} pinned</span>
+            <span>{state.hiddenPublications.length} hidden sources</span>
+            <span>
+              {state.lockedFields.length + state.lockedTopics.length} locks
+            </span>
+          </div>
+        </>,
+      );
+    if (component.type === 'assumptions')
+      return shell(
+        <>
+          <h2 id={headingId} className="sr-only">
+            {componentHeading(component, 'Edition controls')}
+          </h2>
+          <EditionControls state={state} commit={commit} announce={announce} />
+        </>,
+      );
+    if (component.type === 'metric_strip')
+      return shell(
+        <>
+          <h2 id={headingId}>
+            {componentHeading(component, 'Edition at a glance')}
+          </h2>
+          <div className="tc-metric-strip">
+            <div>
+              <strong>{articles.length}</strong>
+              <span>source articles</span>
+            </div>
+            <div>
+              <strong>{selection.selected.length}</strong>
+              <span>developments</span>
+            </div>
+            <div>
+              <strong>{formatReadingTime(selection.usedSeconds)}</strong>
+              <span>reading time</span>
+            </div>
+            <div>
+              <strong>
+                {selection.selected.reduce(
+                  (sum, item) => sum + item.whatNewFacts.length,
+                  0,
+                )}
+              </strong>
+              <span>new verified facts</span>
+            </div>
+          </div>
+        </>,
+      );
+    if (
+      component.type === 'finite_edition' ||
+      component.type === 'reading_queue'
+    )
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">
+                {component.type === 'reading_queue'
+                  ? 'Read now'
+                  : 'Genuinely new first'}
+              </p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  `${selection.selected.length} developments, not ${articles.length} headlines`,
+                )}
+              </h2>
+            </div>
+            <span>{formatReadingTime(selection.remainingSeconds)} left</span>
+          </div>
+          {selection.feasible ? (
+            <div className="tc-composed-stories">
+              {selection.selected
+                .slice(0, component.limit ?? selection.selected.length)
+                .map((candidate, index) => (
+                  <StoryCard
+                    key={candidate.cluster.id}
+                    candidate={candidate}
+                    index={index}
+                    state={state}
+                    selection={selection}
+                    commit={commit}
+                    openReason={() => openReason(candidate.cluster.id)}
+                    openComparison={() => openComparison(candidate.cluster.id)}
+                  />
+                ))}
+              <div className="tc-edition-end">
+                <Check />
+                <p>
+                  <strong>End of your edition</strong>
+                  <span>
+                    {formatReadingTime(selection.remainingSeconds)} unused · no
+                    infinite feed
+                  </span>
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p>
+              This edition has no results until one exact relaxation is applied.
+            </p>
+          )}
+        </>,
+      );
+    if (
+      component.type === 'chronological_timeline' ||
+      component.type === 'background_material'
+    )
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Verified chronology</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  focus
+                    ? `${focus.label}: what changed, in order`
+                    : 'Story timeline',
+                )}
+              </h2>
+            </div>
+            <span>
+              {component.variant === 'new_only'
+                ? 'New facts only'
+                : 'All visible coverage'}
+            </span>
+          </div>
+          <CurrentTimeline component={component} />
+        </>,
+      );
+    if (component.type === 'provenance_map')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Fact by fact</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  focus ? `${focus.label}: provenance map` : 'Provenance map',
+                )}
+              </h2>
+            </div>
+            <span>First report → repeats</span>
+          </div>
+          <ProvenanceMap component={component} />
+        </>,
+      );
+    if (component.type === 'repeated_coverage') {
+      const coverage = focus
+        ? articles
+            .filter(
+              (article) =>
+                article.clusterId === focus.id && article.role !== 'background',
+            )
+            .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt))
+        : [];
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Same story, different roles</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  focus ? `Coverage of ${focus.label}` : 'Repeated coverage',
+                )}
+              </h2>
+            </div>
+          </div>
+          <div className="tc-coverage-board">
+            {coverage.map((article) => (
+              <article key={article.id}>
+                <span>{article.role.replaceAll('_', ' ')}</span>
+                <h3>{article.publication}</h3>
+                <p>{article.headline}</p>
+                <strong>
+                  {article.introducedFactIds.length} genuinely new{' '}
+                  {article.introducedFactIds.length === 1 ? 'fact' : 'facts'}
+                </strong>
+              </article>
+            ))}
+          </div>
+        </>,
+      );
+    }
+    if (component.type === 'disagreement_board')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Evidence check</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  'No verified contradictions in this demonstration dataset',
+                )}
+              </h2>
+            </div>
+          </div>
+          <p>
+            The source record contains additions and follow-ups rather than
+            conflicting verified claims. The map below shows where evidence
+            changed.
+          </p>
+          <CurrentTimeline
+            component={{
+              ...component,
+              type: 'chronological_timeline',
+              variant: 'new_only',
+            }}
+          />
+        </>,
+      );
+    if (component.type === 'topic_dashboard')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Coverage mix</p>
+              <h2 id={headingId}>
+                {componentHeading(component, 'Topics in the source record')}
+              </h2>
+            </div>
+          </div>
+          <div className="tc-topic-dashboard">
+            {topicIds.map((id) => {
+              const sourceCount = articles.filter(
+                (article) => clusterById.get(article.clusterId)?.topicId === id,
+              ).length;
+              const selectedCount = selection.selected.filter(
+                (item) => item.cluster.topicId === id,
+              ).length;
+              return (
+                <article key={id}>
+                  <strong>{topicLabels[id]}</strong>
+                  <span>{sourceCount} articles</span>
+                  <b>{selectedCount} selected</b>
+                </article>
+              );
+            })}
+          </div>
+        </>,
+      );
+    if (component.type === 'comparison')
+      return shell(
+        <>
+          {state.comparison ? (
+            <>
+              <h2 id={headingId} className="sr-only">
+                {componentHeading(component, 'Coverage comparison')}
+              </h2>
+              <CoverageDialog
+                state={state}
+                close={() =>
+                  replaceTransient((current) => ({
+                    ...current,
+                    comparison: null,
+                  }))
+                }
+              />
+            </>
+          ) : (
+            <div className="tc-comparison-empty">
+              <p className="tc-eyebrow">Side by side</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  'Choose a development to compare its coverage',
+                )}
+              </h2>
+              <div>
+                {selection.selected.slice(0, 3).map((candidate) => (
+                  <button
+                    key={candidate.cluster.id}
+                    onClick={() => openComparison(candidate.cluster.id)}
+                  >
+                    {candidate.cluster.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>,
+      );
+    if (component.type === 'selection_explanation')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Deterministic selection</p>
+              <h2 id={headingId}>
+                {componentHeading(
+                  component,
+                  'Why each development made the edition',
+                )}
+              </h2>
+            </div>
+          </div>
+          <div className="tc-reason-list">
+            {selection.selected.map((candidate) => {
+              const reason = selectionReason(candidate, selection, config);
+              return (
+                <button
+                  key={candidate.cluster.id}
+                  onClick={() => openReason(candidate.cluster.id)}
+                >
+                  <span>{candidate.cluster.label}</span>
+                  <strong>{reason.deterministic_reason}</strong>
+                  <code>{reason.arithmetic}</code>
+                </button>
+              );
+            })}
+          </div>
+        </>,
+      );
+    if (component.type === 'checklist')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Reader requirements</p>
+              <h2 id={headingId}>
+                {componentHeading(component, 'What this edition preserves')}
+              </h2>
+            </div>
+          </div>
+          <div className="tc-checklist">
+            <div>
+              <Check />
+              Within {formatReadingTime(config.budgetSeconds)}
+            </div>
+            {minimumIds
+              .filter((id) => config.minimums[id] > 0)
+              .map((id) => (
+                <div key={id}>
+                  <Check />
+                  At least {config.minimums[id]} {topicLabels[id]}
+                </div>
+              ))}
+            <div>
+              <Check />
+              {Math.round(config.originalReportingWeight * 100)}%
+              original-reporting preference
+            </div>
+          </div>
+        </>,
+      );
+    if (component.type === 'relaxations')
+      return shell(
+        <>
+          <div className="tc-composed-heading">
+            <div>
+              <p className="tc-eyebrow">Requirements preserved</p>
+              <h2 id={headingId}>
+                {componentHeading(component, 'Exact recovery choices')}
+              </h2>
+            </div>
+          </div>
+          <div className="tc-relaxations">
+            {relaxations.length ? (
+              relaxations.map((relaxation) => (
+                <button
+                  key={relaxation.id}
+                  onClick={() =>
+                    commit((current) => ({
+                      ...current,
+                      edition: { ...current.edition!, ...relaxation.patch },
+                      hiddenPublications: relaxation.restorePublications
+                        ? []
+                        : current.hiddenPublications,
+                      pinnedClusters: relaxation.unpinAll
+                        ? []
+                        : current.pinnedClusters,
+                    }))
+                  }
+                >
+                  {relaxation.label}
+                  <span>Apply this verified feasible change</span>
+                </button>
+              ))
+            ) : (
+              <p>No relaxation is needed.</p>
+            )}
+          </div>
+        </>,
+      );
+    return null;
+  };
+  return (
+    <main className="tc-shell tc-decision tc-composed-page" id="top">
+      <section className="tc-edition-hero">
+        <div>
+          <p className="tc-eyebrow">Your finite edition</p>
+          <h1 tabIndex={-1} id="tc-edition-heading">
+            {selection.feasible
+              ? `Your ${formatReadingTime(selection.usedSeconds)} edition.`
+              : 'Your edition cannot fit these choices yet.'}
+          </h1>
+          <p>
+            {selection.feasible
+              ? `${articles.length} articles became ${selection.selected.length} developments. The Current keeps the facts, sources and calculations authoritative.`
+              : 'Your requirements remain intact. A verified recovery choice is available below.'}
+          </p>
+        </div>
+        <div className="tc-history">
+          <button
+            type="button"
+            onClick={() =>
+              commit((current) => ({
+                ...current,
+                edition: null,
+                comparison: null,
+                reasonClusterId: null,
+              }))
+            }
+          >
+            <RotateCcw size={14} />
+            Start over
+          </button>
+          <button type="button" onClick={undo} disabled={!state.past.length}>
+            <Undo2 size={14} />
+            Undo
+          </button>
+          <button type="button" onClick={redo} disabled={!state.future.length}>
+            Redo
+            <Redo2 size={14} />
+          </button>
+        </div>
+      </section>
+      <div className="tc-composition-grid">
+        {config.composition.map(renderComponent)}
+      </div>
+      {state.hiddenPublications.length > 0 && (
+        <div className="tc-hidden">
+          <EyeOff size={15} />
+          <span>
+            {state.hiddenPublications.length} hidden{' '}
+            {state.hiddenPublications.length === 1
+              ? 'publication'
+              : 'publications'}
+          </span>
+          <button
+            onClick={() =>
+              commit((current) => ({ ...current, hiddenPublications: [] }))
+            }
+          >
+            Restore all
+          </button>
+        </div>
+      )}
+      <footer className="tc-footer">
+        <p>
+          The Current is a fictional demonstration newsroom. Every publication,
+          reporter, event and article is invented.
+        </p>
+        <SiteLinks />
+      </footer>
+      <ReasonDialog
+        state={state}
+        selection={selection}
+        close={() =>
+          replaceTransient((current) => ({ ...current, reasonClusterId: null }))
+        }
+      />
+      {state.comparison &&
+        !config.composition.some(
+          (component) => component.type === 'comparison',
+        ) && (
+          <CoverageDialog
+            state={state}
+            close={() =>
+              replaceTransient((current) => ({
+                ...current,
+                comparison: null,
+              }))
+            }
+          />
+        )}
+    </main>
+  );
+}
+
 export default function EditionPage() {
   const [state, setState] = useState<AppState>(blankState);
   const [hydrated, setHydrated] = useState(false);
   const [mcpAvailable, setMcpAvailable] = useState(false);
-  const [building, setBuilding] = useState(false);
-  const [liveMessage, setLiveMessage] = useState("");
+  const [building, setBuilding] = useState<{
+    phase: 'working' | 'result';
+    count?: number;
+    seconds?: number;
+  } | null>(null);
+  const [recomposing, setRecomposing] = useState(false);
+  const [liveMessage, setLiveMessage] = useState('');
   const stateRef = useRef(state);
 
   useEffect(() => {
     queueMicrotask(() => {
       try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
+        const url = new URL(location.href);
+        const fresh = url.searchParams.get('fresh') === '1';
+        if (fresh) {
+          localStorage.removeItem(STORAGE_KEY);
+          url.searchParams.delete('fresh');
+          history.replaceState(
+            history.state,
+            '',
+            `${url.pathname}${url.search}${url.hash}`,
+          );
+          stateRef.current = blankState;
+          setState(blankState);
+        } else {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (!stored) throw new Error('No saved edition');
           const restored = restoreState(
             JSON.parse(stored) as Partial<AppState>,
           );
@@ -1273,7 +2023,8 @@ export default function EditionPage() {
           setState(restored);
         }
       } catch {
-        localStorage.removeItem(STORAGE_KEY);
+        stateRef.current = blankState;
+        setState(blankState);
       }
       setHydrated(true);
     });
@@ -1359,9 +2110,9 @@ export default function EditionPage() {
       const current = stateRef.current;
       return jsonSafe({
         ok: true,
-        page: "the_current",
+        page: 'the_current',
         fictional_demo_newsroom: true,
-        dataset_timestamp: "2026-09-04T10:18:00+01:00",
+        dataset_timestamp: '2026-09-04T10:18:00+01:00',
         article_count: articles.length,
         story_cluster_count: clusters.length,
         supported_topics: topicIds.map((id) => ({
@@ -1374,9 +2125,50 @@ export default function EditionPage() {
           maximum: 1200,
           common_values: [300, 600, 900, 1200],
         },
-        supported_background_modes: ["omit", "include_free", "include_counted"],
+        supported_background_modes: ['omit', 'include_free', 'include_counted'],
+        native_component_types: editionComponentTypes,
+        native_component_settings: {
+          ordered: true,
+          supported_fields: [
+            'heading',
+            'variant',
+            'metric_ids',
+            'record_ids',
+            'assumption_ids',
+            'group_by',
+            'sort_metric_id',
+            'sort_direction',
+            'emphasized_record_ids',
+            'emphasized_metric_ids',
+            'width',
+            'limit',
+            'show_only_differences',
+          ],
+          supported_grouping_ids: editionGroupingIds,
+          record_ids_may_reference: ['cluster_id', 'article_id'],
+        },
+        supported_composition_operations: [
+          'set_composition',
+          'add_component',
+          'remove_component',
+          'move_component',
+          'configure_component',
+        ],
+        supported_human_state_operations: [
+          'pin_story',
+          'unpin_story',
+          'hide_source',
+          'restore_source',
+          'lock_topic',
+          'unlock_topic',
+          'lock_field',
+          'unlock_field',
+        ],
         current_revision: current.revision,
         edition: current.edition,
+        current_composition: current.edition
+          ? serializeComposition(current.edition.composition)
+          : [],
         selection: compactSelection(current),
         locked_field_ids: current.lockedFields,
         locked_topic_ids: current.lockedTopics,
@@ -1384,6 +2176,13 @@ export default function EditionPage() {
         hidden_publications: current.hiddenPublications,
         comparison: current.comparison,
         open_selection_reason_cluster_id: current.reasonClusterId,
+        human_state: {
+          owner: 'reader',
+          locked_field_ids: current.lockedFields,
+          locked_topic_ids: current.lockedTopics,
+          pinned_cluster_ids: current.pinnedClusters,
+          hidden_publications: current.hiddenPublications,
+        },
         clusters: clusters.map((cluster) => ({
           cluster_id: cluster.id,
           label: cluster.label,
@@ -1416,12 +2215,21 @@ export default function EditionPage() {
       const rawMinimums = input.minimums;
       if (
         !rawMinimums ||
-        typeof rawMinimums !== "object" ||
+        typeof rawMinimums !== 'object' ||
         Array.isArray(rawMinimums) ||
         !Array.isArray(input.excluded_topic_ids)
       )
         return null;
       const minima = rawMinimums as Record<string, unknown>;
+      let composition: NativeComponent[];
+      try {
+        composition = parseComposition(
+          input.components,
+          editionCompositionOptions,
+        );
+      } catch {
+        return null;
+      }
       return {
         budgetSeconds: Number(input.budget_seconds),
         excludedTopicIds: input.excluded_topic_ids as TopicId[],
@@ -1433,6 +2241,7 @@ export default function EditionPage() {
         },
         originalReportingWeight: Number(input.original_reporting_weight),
         backgroundMode: String(input.background_mode) as BackgroundMode,
+        composition,
       };
     };
     const createEdition = async (
@@ -1442,31 +2251,31 @@ export default function EditionPage() {
       const current = stateRef.current;
       if (current.edition && input.base_revision == null)
         return toolFailure(
-          "EDITION_REQUIRES_REVISION",
-          "An edition already exists. Read it and include the current revision.",
+          'EDITION_REQUIRES_REVISION',
+          'An edition already exists. Read it and include the current revision.',
           { current_revision: current.revision },
         );
       if (current.edition && input.base_revision !== current.revision)
         return toolFailure(
-          "STALE_VIEW",
-          "The page changed since it was read.",
+          'STALE_VIEW',
+          'The page changed since it was read.',
           { current_revision: current.revision },
         );
       const proposed = parseConfig(input);
       if (!proposed)
         return toolFailure(
-          "MISSING_INPUT",
-          "Provide all supported edition fields.",
+          'MISSING_INPUT',
+          'Provide all supported edition fields.',
         );
       if (current.edition) {
-        if (current.lockedFields.includes("budget_seconds"))
+        if (current.lockedFields.includes('budget_seconds'))
           proposed.budgetSeconds = current.edition.budgetSeconds;
-        if (current.lockedFields.includes("minimums"))
+        if (current.lockedFields.includes('minimums'))
           proposed.minimums = current.edition.minimums;
-        if (current.lockedFields.includes("original_reporting_weight"))
+        if (current.lockedFields.includes('original_reporting_weight'))
           proposed.originalReportingWeight =
             current.edition.originalReportingWeight;
-        if (current.lockedFields.includes("background_mode"))
+        if (current.lockedFields.includes('background_mode'))
           proposed.backgroundMode = current.edition.backgroundMode;
         for (const topic of current.lockedTopics) {
           const wasExcluded = current.edition.excludedTopicIds.includes(topic),
@@ -1478,16 +2287,32 @@ export default function EditionPage() {
         }
       }
       const invalid = validateConfig(proposed);
-      if (invalid) return toolFailure("INVALID_EDITION", invalid);
+      if (invalid) return toolFailure('INVALID_EDITION', invalid);
       abortIfNeeded(signal);
-      setBuilding(true);
-      await new Promise((resolve) => setTimeout(resolve, 180));
+      const prepared = selectEdition(
+        proposed,
+        current.pinnedClusters,
+        current.hiddenPublications,
+      );
+      const reduceMotion = matchMedia(
+        '(prefers-reduced-motion: reduce)',
+      ).matches;
+      setBuilding({ phase: 'working' });
+      if (!reduceMotion)
+        await new Promise((resolve) => setTimeout(resolve, 650));
+      setBuilding({
+        phase: 'result',
+        count: prepared.selected.length,
+        seconds: prepared.usedSeconds,
+      });
+      if (!reduceMotion)
+        await new Promise((resolve) => setTimeout(resolve, 300));
       abortIfNeeded(signal);
       if (stateRef.current.revision !== current.revision) {
-        setBuilding(false);
+        setBuilding(null);
         return toolFailure(
-          "STALE_VIEW",
-          "The page changed while the edition was being prepared.",
+          'STALE_VIEW',
+          'The page changed while the edition was being prepared.',
           { current_revision: stateRef.current.revision },
         );
       }
@@ -1496,15 +2321,19 @@ export default function EditionPage() {
         edition: proposed,
         reasonClusterId: null,
       }));
-      setBuilding(false);
-      history.replaceState({ edition: false }, "");
-      history.pushState({ edition: true }, "");
+      setBuilding(null);
+      setLiveMessage(
+        `${prepared.selected.length} developments · ${formatReadingTime(prepared.usedSeconds)}.`,
+      );
+      history.replaceState({ edition: false }, '');
+      history.pushState({ edition: true }, '');
       await delayPaint();
-      document.getElementById("tc-edition-heading")?.focus();
+      document.getElementById('tc-edition-heading')?.focus();
       return jsonSafe({
         ok: true,
         revision: next.revision,
         ...compactSelection(next),
+        current_composition: serializeComposition(proposed.composition),
       });
     };
     const updateEdition = async (
@@ -1514,99 +2343,278 @@ export default function EditionPage() {
       const current = stateRef.current;
       if (!current.edition)
         return toolFailure(
-          "NO_ACTIVE_EDITION",
-          "Create an edition before updating it.",
+          'NO_ACTIVE_EDITION',
+          'Create an edition before updating it.',
         );
       if (input.base_revision !== current.revision)
         return toolFailure(
-          "STALE_VIEW",
-          "The page changed since it was read.",
+          'STALE_VIEW',
+          'The page changed since it was read.',
           { current_revision: current.revision },
         );
       if (
         !Array.isArray(input.operations) ||
         !input.operations.length ||
-        input.operations.length > 12
+        input.operations.length > 16
       )
         return toolFailure(
-          "INVALID_OPERATIONS",
-          "Provide one to twelve supported operations.",
+          'INVALID_OPERATIONS',
+          'Provide one to sixteen supported operations.',
         );
       const draft = cloneConfig(current.edition);
+      let lockedFields = [...current.lockedFields];
+      let lockedTopics = [...current.lockedTopics];
+      let pinnedClusters = [...current.pinnedClusters];
+      let hiddenPublications = [...current.hiddenPublications];
       const changed: string[] = [];
       for (const item of input.operations) {
-        if (!item || typeof item !== "object" || Array.isArray(item))
+        if (!item || typeof item !== 'object' || Array.isArray(item))
           return toolFailure(
-            "INVALID_OPERATIONS",
-            "Each operation must be an object.",
+            'INVALID_OPERATIONS',
+            'Each operation must be an object.',
           );
         const operation = item as Record<string, unknown>,
           type = String(operation.operation);
-        if (type === "set_budget_seconds") {
-          if (current.lockedFields.includes("budget_seconds"))
+        if (type === 'set_composition') {
+          try {
+            draft.composition = parseComposition(
+              operation.components,
+              editionCompositionOptions,
+            );
+          } catch (error) {
             return toolFailure(
-              "LOCKED_FIELD",
-              "The reading budget is locked by the reader.",
+              'INVALID_COMPOSITION',
+              error instanceof Error
+                ? error.message
+                : 'Invalid page composition.',
+            );
+          }
+          changed.push('composition');
+          continue;
+        }
+        if (type === 'add_component') {
+          try {
+            draft.composition = insertComponent(
+              draft.composition,
+              parseNativeComponent(
+                operation.component,
+                editionCompositionOptions,
+              ),
+              operation.position == null
+                ? undefined
+                : Number(operation.position),
+            );
+          } catch (error) {
+            return toolFailure(
+              'INVALID_COMPOSITION',
+              error instanceof Error ? error.message : 'Invalid component.',
+            );
+          }
+          changed.push('composition');
+          continue;
+        }
+        if (
+          type === 'remove_component' ||
+          type === 'move_component' ||
+          type === 'configure_component'
+        ) {
+          try {
+            const componentId = String(operation.component_id);
+            if (type === 'remove_component')
+              draft.composition = removeComponent(
+                draft.composition,
+                componentId,
+              );
+            else if (type === 'move_component')
+              draft.composition = moveComponent(
+                draft.composition,
+                componentId,
+                Number(operation.position),
+              );
+            else {
+              const parsed = parseNativeComponentPatch(
+                operation.component,
+                editionCompositionOptions,
+              );
+              draft.composition = configureComponent(
+                draft.composition,
+                componentId,
+                parsed,
+              );
+            }
+          } catch (error) {
+            return toolFailure(
+              'INVALID_COMPOSITION',
+              error instanceof Error
+                ? error.message
+                : 'Invalid component operation.',
+            );
+          }
+          changed.push('composition');
+          continue;
+        }
+        if (type === 'pin_story' || type === 'unpin_story') {
+          const clusterId = String(operation.cluster_id);
+          if (!clusterById.has(clusterId))
+            return toolFailure(
+              'UNKNOWN_CLUSTER',
+              `Unknown cluster “${clusterId}”.`,
+            );
+          if (type === 'pin_story')
+            pinnedClusters = [...new Set([...pinnedClusters, clusterId])];
+          else pinnedClusters = pinnedClusters.filter((id) => id !== clusterId);
+          changed.push(clusterId);
+          continue;
+        }
+        if (type === 'hide_source' || type === 'restore_source') {
+          const publication = String(operation.publication);
+          if (!articles.some((article) => article.publication === publication))
+            return toolFailure(
+              'UNKNOWN_PUBLICATION',
+              `Unknown publication “${publication}”.`,
+            );
+          if (type === 'hide_source')
+            hiddenPublications = [
+              ...new Set([...hiddenPublications, publication]),
+            ];
+          else
+            hiddenPublications = hiddenPublications.filter(
+              (id) => id !== publication,
+            );
+          changed.push(publication);
+          continue;
+        }
+        if (type === 'lock_topic' || type === 'unlock_topic') {
+          const topicId = String(operation.topic_id) as TopicId;
+          if (!topicIds.includes(topicId))
+            return toolFailure('UNKNOWN_TOPIC', `Unknown topic “${topicId}”.`);
+          if (type === 'lock_topic')
+            lockedTopics = [...new Set([...lockedTopics, topicId])];
+          else lockedTopics = lockedTopics.filter((id) => id !== topicId);
+          changed.push(topicId);
+          continue;
+        }
+        if (type === 'lock_field' || type === 'unlock_field') {
+          const fieldId = String(operation.field_id) as EditionFieldId;
+          if (
+            ![
+              'budget_seconds',
+              'minimums',
+              'original_reporting_weight',
+              'background_mode',
+            ].includes(fieldId)
+          )
+            return toolFailure(
+              'INVALID_OPERATION',
+              `Unknown field “${fieldId}”.`,
+            );
+          if (type === 'lock_field')
+            lockedFields = [...new Set([...lockedFields, fieldId])];
+          else lockedFields = lockedFields.filter((id) => id !== fieldId);
+          changed.push(fieldId);
+          continue;
+        }
+        if (type === 'set_budget_seconds') {
+          if (lockedFields.includes('budget_seconds'))
+            return toolFailure(
+              'LOCKED_FIELD',
+              'The reading budget is locked by the reader.',
             );
           draft.budgetSeconds = Number(operation.value);
-        } else if (type === "set_topic_policy") {
+        } else if (type === 'set_topic_policy') {
           const topic = String(operation.topic_id) as TopicId;
           if (!topicIds.includes(topic))
-            return toolFailure("UNKNOWN_TOPIC", `Unknown topic “${topic}”.`, {
+            return toolFailure('UNKNOWN_TOPIC', `Unknown topic “${topic}”.`, {
               valid_ids: topicIds,
             });
-          if (current.lockedTopics.includes(topic))
+          if (lockedTopics.includes(topic))
             return toolFailure(
-              "LOCKED_TOPIC",
+              'LOCKED_TOPIC',
               `${topicLabels[topic]} is locked by the reader.`,
             );
           draft.excludedTopicIds =
-            operation.policy === "exclude"
+            operation.policy === 'exclude'
               ? [...new Set([...draft.excludedTopicIds, topic])]
               : draft.excludedTopicIds.filter((id) => id !== topic);
-        } else if (type === "set_minimum") {
-          if (current.lockedFields.includes("minimums"))
+        } else if (type === 'set_minimum') {
+          if (lockedFields.includes('minimums'))
             return toolFailure(
-              "LOCKED_FIELD",
-              "Coverage minimums are locked by the reader.",
+              'LOCKED_FIELD',
+              'Coverage minimums are locked by the reader.',
             );
           const id = String(operation.minimum_id) as MinimumId;
           if (!minimumIds.includes(id))
-            return toolFailure("UNKNOWN_MINIMUM", `Unknown minimum “${id}”.`, {
+            return toolFailure('UNKNOWN_MINIMUM', `Unknown minimum “${id}”.`, {
               valid_ids: minimumIds,
             });
           draft.minimums[id] = Number(operation.value);
-        } else if (type === "set_original_reporting_weight") {
-          if (current.lockedFields.includes("original_reporting_weight"))
+        } else if (type === 'set_original_reporting_weight') {
+          if (lockedFields.includes('original_reporting_weight'))
             return toolFailure(
-              "LOCKED_FIELD",
-              "The original-reporting preference is locked by the reader.",
+              'LOCKED_FIELD',
+              'The original-reporting preference is locked by the reader.',
             );
           draft.originalReportingWeight = Number(operation.value);
-        } else if (type === "set_background_mode") {
-          if (current.lockedFields.includes("background_mode"))
+        } else if (type === 'set_background_mode') {
+          if (lockedFields.includes('background_mode'))
             return toolFailure(
-              "LOCKED_FIELD",
-              "The background policy is locked by the reader.",
+              'LOCKED_FIELD',
+              'The background policy is locked by the reader.',
             );
           draft.backgroundMode = String(operation.value) as BackgroundMode;
         } else
           return toolFailure(
-            "INVALID_OPERATION",
+            'INVALID_OPERATION',
             `Unsupported operation “${type}”.`,
           );
         changed.push(type);
       }
       const invalid = validateConfig(draft);
-      if (invalid) return toolFailure("INVALID_EDITION", invalid);
+      if (invalid) return toolFailure('INVALID_EDITION', invalid);
       abortIfNeeded(signal);
-      const next = commit((present) => ({ ...present, edition: draft }));
+      const unchanged =
+        JSON.stringify(draft) === JSON.stringify(current.edition) &&
+        JSON.stringify(lockedFields) === JSON.stringify(current.lockedFields) &&
+        JSON.stringify(lockedTopics) === JSON.stringify(current.lockedTopics) &&
+        JSON.stringify(pinnedClusters) ===
+          JSON.stringify(current.pinnedClusters) &&
+        JSON.stringify(hiddenPublications) ===
+          JSON.stringify(current.hiddenPublications);
+      if (unchanged)
+        return jsonSafe({
+          ok: true,
+          revision: current.revision,
+          changed_controls: [],
+          current_composition: serializeComposition(draft.composition),
+          ...compactSelection(current),
+        });
+      setRecomposing(true);
+      const next = commit((present) => ({
+        ...present,
+        edition: draft,
+        lockedFields,
+        lockedTopics,
+        pinnedClusters,
+        hiddenPublications,
+      }));
       await delayPaint();
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+        await new Promise((resolve) => setTimeout(resolve, 420));
+      setRecomposing(false);
+      const recomposed = selectEdition(
+        draft,
+        pinnedClusters,
+        hiddenPublications,
+      );
+      setLiveMessage(
+        `Edition recomposed. ${recomposed.selected.length} developments · ${formatReadingTime(recomposed.usedSeconds)}.`,
+      );
       return jsonSafe({
         ok: true,
         revision: next.revision,
         changed_controls: changed,
         ...compactSelection(next),
+        current_composition: serializeComposition(draft.composition),
       });
     };
     const compareCoverageHandler = async (
@@ -1616,20 +2624,20 @@ export default function EditionPage() {
       const current = stateRef.current;
       if (!current.edition)
         return toolFailure(
-          "NO_ACTIVE_EDITION",
-          "Create an edition before comparing coverage.",
+          'NO_ACTIVE_EDITION',
+          'Create an edition before comparing coverage.',
         );
       if (input.base_revision !== current.revision)
         return toolFailure(
-          "STALE_VIEW",
-          "The page changed since it was read.",
+          'STALE_VIEW',
+          'The page changed since it was read.',
           { current_revision: current.revision },
         );
       const clusterId = String(input.cluster_id),
         cluster = clusterById.get(clusterId);
       if (!cluster)
         return toolFailure(
-          "UNKNOWN_CLUSTER",
+          'UNKNOWN_CLUSTER',
           `Unknown cluster “${clusterId}”.`,
           { valid_ids: clusters.map((item) => item.id) },
         );
@@ -1637,7 +2645,7 @@ export default function EditionPage() {
         .filter(
           (article) =>
             article.clusterId === clusterId &&
-            article.role !== "background" &&
+            article.role !== 'background' &&
             !current.hiddenPublications.includes(article.publication),
         )
         .map((article) => article.id);
@@ -1649,39 +2657,40 @@ export default function EditionPage() {
         ids.length > 5 ||
         ids.some(
           (id) =>
-            typeof id !== "string" ||
+            typeof id !== 'string' ||
             articleById.get(id)?.clusterId !== clusterId,
         )
       )
         return toolFailure(
-          "ARTICLE_CLUSTER_MISMATCH",
-          "Choose two to five visible articles from this story cluster.",
+          'ARTICLE_CLUSTER_MISMATCH',
+          'Choose two to five visible articles from this story cluster.',
         );
       const hidden = ids.find((id) =>
         current.hiddenPublications.includes(
-          articleById.get(String(id))?.publication ?? "",
+          articleById.get(String(id))?.publication ?? '',
         ),
       );
       if (hidden)
         return toolFailure(
-          "HIDDEN_PUBLICATION",
+          'HIDDEN_PUBLICATION',
           `${articleById.get(String(hidden))?.publication} was hidden by the reader.`,
         );
       const result = compareCoverage(clusterId, ids as string[]);
       if (!result)
         return toolFailure(
-          "INSUFFICIENT_VISIBLE_COVERAGE",
-          "At least two comparable articles are required.",
+          'INSUFFICIENT_VISIBLE_COVERAGE',
+          'At least two comparable articles are required.',
         );
       abortIfNeeded(signal);
-      const next = commit((present) => ({
+      replaceTransient((present) => ({
         ...present,
         comparison: { clusterId, articleIds: ids as string[] },
+        reasonClusterId: null,
       }));
       await delayPaint();
       return jsonSafe({
         ok: true,
-        revision: next.revision,
+        revision: current.revision,
         comparison: result,
       });
     };
@@ -1692,13 +2701,13 @@ export default function EditionPage() {
       const current = stateRef.current;
       if (!current.edition)
         return toolFailure(
-          "NO_ACTIVE_EDITION",
-          "Create an edition before opening a selection reason.",
+          'NO_ACTIVE_EDITION',
+          'Create an edition before opening a selection reason.',
         );
       if (input.base_revision !== current.revision)
         return toolFailure(
-          "STALE_VIEW",
-          "The page changed since it was read.",
+          'STALE_VIEW',
+          'The page changed since it was read.',
           { current_revision: current.revision },
         );
       const clusterId = String(input.cluster_id),
@@ -1712,8 +2721,8 @@ export default function EditionPage() {
         );
       if (!candidate)
         return toolFailure(
-          "STORY_NOT_SELECTED",
-          "That story is not in the current edition.",
+          'STORY_NOT_SELECTED',
+          'That story is not in the current edition.',
           {
             selected_cluster_ids: selection.selected.map(
               (item) => item.cluster.id,
@@ -1724,6 +2733,7 @@ export default function EditionPage() {
       replaceTransient((present) => ({
         ...present,
         reasonClusterId: clusterId,
+        comparison: null,
       }));
       await delayPaint();
       return jsonSafe({
@@ -1765,12 +2775,15 @@ export default function EditionPage() {
           replaceTransient((current) => ({ ...current, edition: prior }));
       }
     };
-    addEventListener("popstate", onPop);
-    return () => removeEventListener("popstate", onPop);
+    addEventListener('popstate', onPop);
+    return () => removeEventListener('popstate', onPop);
   }, [replaceTransient]);
 
+  if (!hydrated) return <div className="tc-hydration-shell" aria-busy="true" />;
   return (
-    <div className="current-app">
+    <div
+      className={`current-app${building ? ' is-building' : ''}${recomposing ? ' is-recomposing' : ''}`}
+    >
       <CurrentHeader mcpAvailable={mcpAvailable} />
       <div className="sr-only" aria-live="polite">
         {liveMessage}
@@ -1778,10 +2791,21 @@ export default function EditionPage() {
       {building && (
         <output className="tc-building">
           <span />
-          Creating your finite edition…
+          {building.phase === 'working'
+            ? 'Collapsing 30 headlines into new developments…'
+            : `${building.count ?? 0} developments · ${formatReadingTime(building.seconds ?? 0)}.`}
         </output>
       )}
-      {state.edition ? (
+      {state.edition?.composition?.length ? (
+        <ComposedEditionPage
+          state={state}
+          commit={commit}
+          replaceTransient={replaceTransient}
+          undo={undo}
+          redo={redo}
+          announce={setLiveMessage}
+        />
+      ) : state.edition ? (
         <DecisionPage
           state={state}
           commit={commit}

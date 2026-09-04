@@ -22,7 +22,6 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
-  Sparkles,
   TrainFront,
   Undo2,
   X,
@@ -54,6 +53,20 @@ import {
   registerJourneyTools,
   type JourneyWebMcpHandlers,
 } from "@/lib/journey-webmcp";
+import { AssistantPromptPanel } from "@/app/assistant-prompt-panel";
+import {
+  configureComponent,
+  insertComponent,
+  journeyComponentTypes,
+  journeyGroupingIds,
+  moveComponent,
+  parseComposition,
+  parseNativeComponent,
+  parseNativeComponentPatch,
+  removeComponent,
+  serializeComposition,
+  type NativeComponent,
+} from "@/lib/composition";
 
 const STORAGE_KEY = "wayline-journey-view-v1";
 const JOURNEY_HOME = "/journeys";
@@ -93,6 +106,21 @@ const comparisonRowIds = [
   "accessibility",
 ] as const;
 type ComparisonRowId = (typeof comparisonRowIds)[number];
+const journeyCompositionOptions = {
+  allowedTypes: journeyComponentTypes,
+  allowedMetricIds: metricIds,
+  allowedRecordIds: journeys.map((journey) => journey.id),
+  allowedAssumptionIds: [
+    "origin",
+    "destination",
+    "checked_bag",
+    "arrival_deadline_minutes",
+    "minimum_connection_slack_minutes",
+    "reliability_weight",
+  ],
+  allowedGroupIds: journeyGroupingIds,
+  maximumRecords: journeys.length,
+};
 type ControlId = keyof JourneyAssumptions;
 type CalculationState = {
   journeyId: string;
@@ -135,8 +163,8 @@ const snapshotOf = (state: AppState): Snapshot => ({
   hidden: state.hidden,
   compared: state.compared,
   comparisonRows: state.comparisonRows,
-  calculation: state.calculation,
-  showExcluded: state.showExcluded,
+  calculation: null,
+  showExcluded: false,
 });
 const jsonSafe = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const cloneView = (view: JourneyView): JourneyView => jsonSafe(view);
@@ -181,8 +209,27 @@ const handleDialogKey = (
 };
 
 function restoreState(raw: Partial<AppState>): AppState {
+  const restoreView = (view: JourneyView | null | undefined) => {
+    if (!view) return null;
+    let composition = defaultJourneyView.composition;
+    try {
+      composition = parseComposition(
+        Array.isArray(view.composition)
+          ? view.composition
+          : defaultJourneyView.composition,
+        journeyCompositionOptions,
+      );
+    } catch {
+      composition = defaultJourneyView.composition;
+    }
+    return {
+      ...view,
+      title: journeyViewTitle(view.assumptions),
+      composition,
+    };
+  };
   const restoreSnapshot = (item: Partial<Snapshot> | undefined): Snapshot => ({
-    view: item?.view ?? null,
+    view: restoreView(item?.view),
     locked:
       item?.locked?.filter((id) =>
         [
@@ -221,6 +268,11 @@ function validateView(view: JourneyView) {
   const { assumptions } = view;
   if (!view.title.trim() || view.title.length > 80)
     return "Title must contain 1–80 characters.";
+  try {
+    parseComposition(view.composition, journeyCompositionOptions);
+  } catch (error) {
+    return error instanceof Error ? error.message : "Invalid page composition.";
+  }
   if (
     !(assumptions.origin in journeyOrigins) ||
     !(assumptions.destination in journeyDestinations)
@@ -302,7 +354,18 @@ function WaylineHeader({ mcpAvailable }: { mcpAvailable: boolean }) {
       </header>
       {mcpAvailable && (
         <div className="wl-assistant">
-          <Sparkles size={14} /> Works with your browser assistant
+          <AssistantPromptPanel
+            className="assistant-prompt-wayline"
+            prompts={[
+              "Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.",
+              "Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.",
+              "Make it a simple day plan containing only step-free options that reach De Pijp before 7pm.",
+            ]}
+            links={[
+              { href: "/", label: "Try Hearth & Home" },
+              { href: "/edition", label: "Try The Current" },
+            ]}
+          />
         </div>
       )}
     </>
@@ -547,6 +610,10 @@ function JourneyControls({
       view: {
         ...current.view!,
         assumptions: { ...current.view!.assumptions, [id]: value },
+        title: journeyViewTitle({
+          ...current.view!.assumptions,
+          [id]: value,
+        }),
       },
     }));
     announce(
@@ -782,6 +849,67 @@ function JourneyPlot({
   );
 }
 
+function completeJourneySegments(row: JourneyEvaluation, view: JourneyView) {
+  const journey = row.journey;
+  return [
+    {
+      id: "origin-access",
+      label: "Door to departure",
+      from: journeyOrigins[view.assumptions.origin],
+      to: journey.departureTerminal,
+      mode: "walk" as const,
+      minutes: journey.originAccessMinutes[view.assumptions.origin],
+    },
+    {
+      id: "terminal-buffer",
+      label:
+        journey.mode === "flight"
+          ? "Airport buffer & waiting"
+          : "Station buffer & waiting",
+      from: journey.departureTerminal,
+      to: journey.departureTerminal,
+      mode: "wait" as const,
+      minutes: journey.terminalBufferMinutes,
+    },
+    {
+      id: "advertised-travel",
+      label: `${journey.operator} ${journey.service}`,
+      from: journey.departureTerminal,
+      to: journey.arrivalTerminal,
+      mode: journey.mode,
+      minutes: journey.advertisedMinutes,
+    },
+    {
+      id: "arrival-process",
+      label: "Arrival process & transfer wait",
+      from: journey.arrivalTerminal,
+      to: journey.arrivalTerminal,
+      mode: "wait" as const,
+      minutes: journey.arrivalProcessMinutes,
+    },
+    ...(view.assumptions.checked_bag
+      ? [
+          {
+            id: "checked-bag",
+            label: "Checked-bag collection",
+            from: journey.arrivalTerminal,
+            to: journey.arrivalTerminal,
+            mode: "bag" as const,
+            minutes: journey.checkedBagMinutes,
+          },
+        ]
+      : []),
+    {
+      id: "final-transfer",
+      label: "Final transfer & walking",
+      from: journey.arrivalTerminal,
+      to: journeyDestinations[view.assumptions.destination],
+      mode: "walk" as const,
+      minutes: journey.destinationTransferMinutes[view.assumptions.destination],
+    },
+  ];
+}
+
 function JourneyCard({
   row,
   state,
@@ -869,13 +997,17 @@ function JourneyCard({
         className="wl-timeline"
         aria-label={`${journey.operator} journey legs`}
       >
-        {journey.legs.map((leg, index) => (
-          <li key={`${journey.id}-${leg.label}-${index}`}>
+        {completeJourneySegments(row, state.view!).map((leg) => (
+          <li key={`${journey.id}-${leg.id}`}>
             <span>
               {leg.mode === "flight" ? (
                 <Plane size={15} />
               ) : leg.mode === "walk" ? (
                 <Footprints size={15} />
+              ) : leg.mode === "wait" ? (
+                <Clock3 size={15} />
+              ) : leg.mode === "bag" ? (
+                <Briefcase size={15} />
               ) : (
                 <TrainFront size={15} />
               )}
@@ -1574,19 +1706,809 @@ function DecisionPage({
   );
 }
 
+function journeyRowsForComponent(
+  component: NativeComponent,
+  result: ReturnType<typeof evaluateJourneys>,
+) {
+  const rows = component.recordIds?.length
+    ? (component.recordIds
+        .map((id) => result.all.find((row) => row.journey.id === id))
+        .filter(Boolean) as JourneyEvaluation[])
+    : result.ranked;
+  const metric = component.sortMetricId as JourneyMetricId | undefined;
+  const direction = component.sortDirection ?? "asc";
+  const value = (row: JourneyEvaluation) => {
+    if (metric === "door_to_door_time") return row.totalMinutes;
+    if (metric === "walking_distance") return row.walkingKm;
+    if (metric === "disruption_risk") return row.riskPercent;
+    if (metric === "arrival_slack") return row.arrivalSlackMinutes;
+    if (metric === "fare") return row.journey.fare;
+    if (metric === "carbon") return row.journey.carbonKg;
+    if (metric === "advertised_duration") return row.journey.advertisedMinutes;
+    return row.score;
+  };
+  return [...rows]
+    .sort((a, b) => {
+      const difference = value(a) - value(b);
+      return direction === "asc" ? difference : -difference;
+    })
+    .slice(0, component.limit ?? rows.length);
+}
+
+function JourneyTimelineBlock({
+  rows,
+  view,
+  delayMinutes = 0,
+  simple = false,
+}: {
+  rows: JourneyEvaluation[];
+  view: JourneyView;
+  delayMinutes?: number;
+  simple?: boolean;
+}) {
+  return (
+    <div className={`wl-complete-timelines${simple ? " is-simple" : ""}`}>
+      {rows.map((row) => {
+        const delayedArrival = row.arrivalMinute + delayMinutes;
+        return (
+          <article key={row.journey.id} id={`timeline-${row.journey.id}`}>
+            <header>
+              <div>
+                <span>{row.journey.operator}</span>
+                <h3>{row.journey.service}</h3>
+              </div>
+              <div>
+                <strong>{formatClock(delayedArrival)}</strong>
+                <span>
+                  {delayMinutes
+                    ? `after +${delayMinutes} min`
+                    : formatDuration(row.totalMinutes)}
+                </span>
+              </div>
+            </header>
+            <ol>
+              {completeJourneySegments(row, view).map((segment) => (
+                <li key={segment.id}>
+                  <span className={`wl-segment-dot is-${segment.mode}`} />
+                  <div>
+                    <strong>{segment.label}</strong>
+                    <small>
+                      {segment.from} → {segment.to}
+                    </small>
+                  </div>
+                  <b>{segment.minutes}m</b>
+                </li>
+              ))}
+            </ol>
+            {delayMinutes > 0 && (
+              <p
+                className={
+                  row.arrivalSlackMinutes - delayMinutes >= 0
+                    ? "wl-status-pass"
+                    : "wl-status-fail"
+                }
+              >
+                {row.arrivalSlackMinutes - delayMinutes >= 0
+                  ? `Still arrives ${row.arrivalSlackMinutes - delayMinutes} minutes before the deadline.`
+                  : `Misses the deadline by ${Math.abs(row.arrivalSlackMinutes - delayMinutes)} minutes.`}
+              </p>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function JourneyStressTable({
+  rows,
+  delayMinutes,
+  view,
+}: {
+  rows: JourneyEvaluation[];
+  delayMinutes: number;
+  view: JourneyView;
+}) {
+  return (
+    <div className="wl-table-shell">
+      <p className="wl-swipe-hint">
+        Swipe to see every outcome <span aria-hidden="true">→</span>
+      </p>
+      <div className="wl-data-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Journey</th>
+              <th>Baseline arrival</th>
+              <th>After disruption</th>
+              <th>New slack</th>
+              <th>Result</th>
+              <th>Step-free</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const slack =
+                view.assumptions.arrival_deadline_minutes -
+                (row.arrivalMinute + delayMinutes);
+              const otherFailure = row.reasons.some(
+                (reason) => !reason.startsWith("Arrives"),
+              );
+              const passes = slack >= 0 && !otherFailure;
+              return (
+                <tr key={row.journey.id}>
+                  <th>
+                    {row.journey.operator} · {row.journey.service}
+                  </th>
+                  <td>{formatClock(row.arrivalMinute)}</td>
+                  <td>{formatClock(row.arrivalMinute + delayMinutes)}</td>
+                  <td>{slack} min</td>
+                  <td>
+                    <span
+                      className={passes ? "wl-status-pass" : "wl-status-fail"}
+                    >
+                      {passes
+                        ? "Qualifies"
+                        : slack < 0
+                          ? `${Math.abs(slack)} min late`
+                          : row.reasons.join(" · ")}
+                    </span>
+                  </td>
+                  <td>{row.journey.stepFree ? "Yes" : "No"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ComposedJourneyPage({
+  state,
+  commit,
+  replaceTransient,
+  undo,
+  redo,
+  announce,
+}: {
+  state: AppState;
+  commit: (fn: (state: AppState) => AppState) => AppState;
+  replaceTransient: (fn: (state: AppState) => AppState) => AppState;
+  undo: () => void;
+  redo: () => void;
+  announce: (message: string) => void;
+}) {
+  const view = state.view!;
+  const result = useMemo(
+    () => evaluateJourneys(view, state.hidden),
+    [state.hidden, view],
+  );
+  const openCalculation = (
+    journeyId: string,
+    metricId: JourneyCalculationMetricId,
+  ) =>
+    replaceTransient((current) => ({
+      ...current,
+      calculation: { journeyId, metricId },
+    }));
+  const relaxations = journeyRelaxations(view, state.hidden);
+  const toggleCompare = (id: string) =>
+    commit((current) => ({
+      ...current,
+      compared: current.compared.includes(id)
+        ? current.compared.filter((item) => item !== id)
+        : current.compared.length < 4
+          ? [...current.compared, id]
+          : current.compared,
+    }));
+  const heading = (component: NativeComponent, fallback: string) =>
+    component.heading ?? fallback;
+  const renderComponent = (component: NativeComponent) => {
+    const rows = journeyRowsForComponent(component, result);
+    const headingId = `wl-component-${component.id}`;
+    const shell = (content: React.ReactNode, extra = "") => (
+      <section
+        key={component.id}
+        className={`wl-composed-block wl-component-${component.type} ${component.width === "half" ? "wl-half" : ""} ${extra}`}
+        data-component-id={component.id}
+        data-component-type={component.type}
+        aria-labelledby={headingId}
+      >
+        {content}
+      </section>
+    );
+    if (component.type === "decision_summary")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Complete journey decision</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  `${result.ranked.length} of ${journeys.length} journeys qualify`,
+                )}
+              </h2>
+            </div>
+            <strong className="wl-big-number">{result.ranked.length}</strong>
+          </div>
+          <p>
+            Wayline includes origin access, waiting, terminal buffers,
+            advertised travel, arrival processing, luggage and the final
+            transfer.
+          </p>
+          <div className="wl-chips">
+            <span>
+              <MapPin size={14} />
+              {journeyOrigins[view.assumptions.origin]}
+            </span>
+            <span>
+              <ArrowRight size={14} />
+              {journeyDestinations[view.assumptions.destination]}
+            </span>
+            <span>
+              <CalendarClock size={14} />
+              By {formatClock(view.assumptions.arrival_deadline_minutes)}
+            </span>
+            {state.locked.map((id) => (
+              <span key={id}>
+                <Lock size={13} />
+                {id.replaceAll("_", " ")}
+              </span>
+            ))}
+          </div>
+        </>,
+      );
+    if (component.type === "assumptions")
+      return shell(
+        <>
+          <h2 id={headingId} className="sr-only">
+            {heading(component, "Journey assumptions")}
+          </h2>
+          <JourneyControls state={state} commit={commit} announce={announce} />
+        </>,
+      );
+    if (component.type === "metric_strip") {
+      const rowsForMetrics = result.ranked.length ? result.ranked : result.all;
+      return shell(
+        <>
+          <h2 id={headingId}>
+            {heading(component, "What changes the decision")}
+          </h2>
+          <div className="wl-metric-strip">
+            <div>
+              <strong>{result.ranked.length}</strong>
+              <span>qualify now</span>
+            </div>
+            <div>
+              <strong>
+                {formatDuration(
+                  Math.min(...rowsForMetrics.map((row) => row.totalMinutes)),
+                )}
+              </strong>
+              <span>fastest door to door</span>
+            </div>
+            <div>
+              <strong>
+                {Math.min(
+                  ...rowsForMetrics.map((row) => row.riskPercent),
+                ).toFixed(1)}
+                %
+              </strong>
+              <span>lowest risk</span>
+            </div>
+            <div>
+              <strong>{state.saved.length}</strong>
+              <span>saved by you</span>
+            </div>
+          </div>
+        </>,
+      );
+    }
+    if (component.type === "ranked_cards")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Complete journeys</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  rows.length ? "Your current order" : "No journey qualifies",
+                )}
+              </h2>
+            </div>
+          </div>
+          {rows.length ? (
+            <div>
+              {rows.map((row) => (
+                <JourneyCard
+                  key={row.journey.id}
+                  row={row}
+                  state={state}
+                  commit={commit}
+                  openCalculation={openCalculation}
+                />
+              ))}
+            </div>
+          ) : (
+            <p>Nothing was silently relaxed. Use an exact relaxation below.</p>
+          )}
+        </>,
+      );
+    if (
+      component.type === "journey_timeline" ||
+      component.type === "chronological_itinerary"
+    )
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Every part of the day</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  component.type === "chronological_itinerary"
+                    ? "Your day, in order"
+                    : "Complete door-to-door timelines",
+                )}
+              </h2>
+            </div>
+            <p>
+              Travel, waiting, buffers, walking, luggage and transfers stay
+              separate.
+            </p>
+          </div>
+          <JourneyTimelineBlock
+            rows={rows}
+            view={view}
+            delayMinutes={component.delayMinutes ?? 0}
+            simple={component.variant === "simple"}
+          />
+        </>,
+      );
+    if (
+      component.type === "delay_stress_test" ||
+      (component.type === "compact_table" && (component.delayMinutes ?? 0) > 0)
+    ) {
+      const delay = component.delayMinutes ?? 20;
+      const allRows = component.recordIds?.length ? rows : result.all;
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Stress test</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  `Every arrival after a ${delay}-minute disruption`,
+                )}
+              </h2>
+            </div>
+            <strong>+{delay} min</strong>
+          </div>
+          <JourneyStressTable rows={allRows} delayMinutes={delay} view={view} />
+        </>,
+      );
+    }
+    if (component.type === "compact_table")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Compact comparison</p>
+              <h2 id={headingId}>
+                {heading(component, "All journey outcomes")}
+              </h2>
+            </div>
+          </div>
+          <JourneyStressTable
+            rows={component.recordIds?.length ? rows : result.all}
+            delayMinutes={0}
+            view={view}
+          />
+        </>,
+      );
+    if (component.type === "scatter_plot")
+      return shell(
+        <>
+          <h2 id={headingId} className="sr-only">
+            {heading(component, "Journey tradeoff plot")}
+          </h2>
+          <JourneyPlot
+            rows={rows}
+            onExplain={(id) => openCalculation(id, "door_to_door_time")}
+          />
+        </>,
+      );
+    if (component.type === "tradeoff_board")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Traveller-controlled balance</p>
+              <h2 id={headingId}>
+                {heading(component, "Speed versus reliability")}
+              </h2>
+            </div>
+            <p>Walking remains the tie-breaker.</p>
+          </div>
+          <div className="wl-balance-inline">
+            <strong>Faster</strong>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(view.assumptions.reliability_weight * 100)}
+              aria-label="Reliability priority"
+              onChange={(event) => {
+                const reliability_weight = Number(event.target.value) / 100;
+                commit((current) => ({
+                  ...current,
+                  view: {
+                    ...current.view!,
+                    assumptions: {
+                      ...current.view!.assumptions,
+                      reliability_weight,
+                    },
+                    title: journeyViewTitle({
+                      ...current.view!.assumptions,
+                      reliability_weight,
+                    }),
+                  },
+                }));
+              }}
+            />
+            <strong>More reliable</strong>
+            <span>
+              {Math.round(view.assumptions.reliability_weight * 100)}%
+              reliability
+            </span>
+          </div>
+        </>,
+      );
+    if (component.type === "comparison")
+      return shell(
+        <>
+          {state.compared.length >= 2 ? (
+            <JourneyComparison
+              state={state}
+              rows={result.all}
+              close={() =>
+                commit((current) => ({
+                  ...current,
+                  compared: [],
+                  comparisonRows: null,
+                }))
+              }
+              remove={toggleCompare}
+            />
+          ) : (
+            <div className="wl-comparison-empty">
+              <p className="wl-kicker">Side by side</p>
+              <h2 id={headingId}>
+                {heading(component, "Choose two journeys to compare")}
+              </h2>
+              <p>Saved choices and comparisons survive later recompositions.</p>
+              <div>
+                {rows.slice(0, 3).map((row) => (
+                  <button
+                    key={row.journey.id}
+                    onClick={() => toggleCompare(row.journey.id)}
+                  >
+                    {state.compared.includes(row.journey.id)
+                      ? "Selected"
+                      : "Add"}{" "}
+                    {row.journey.service}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>,
+      );
+    if (component.type === "day_plan") {
+      const planRows = rows.filter((row) => row.journey.stepFree);
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Simple day plan</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  `Step-free arrivals to ${journeyDestinations[view.assumptions.destination]}`,
+                )}
+              </h2>
+            </div>
+            <strong>{planRows.length} options</strong>
+          </div>
+          <JourneyTimelineBlock rows={planRows} view={view} simple />
+        </>,
+      );
+    }
+    if (
+      component.type === "cost_breakdown" ||
+      component.type === "calculation_explanation"
+    ) {
+      const row = rows[0];
+      const explanation = row
+        ? explainJourney(row.journey, view, "door_to_door_time")
+        : null;
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Site-owned arithmetic</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  row
+                    ? `${row.journey.service}: every minute`
+                    : "Journey calculation",
+                )}
+              </h2>
+            </div>
+          </div>
+          {explanation ? (
+            <div className="wl-inline-calculation">
+              <strong>{explanation.formattedResult}</strong>
+              {explanation.components.map((item) => (
+                <div key={item.id}>
+                  <span>{item.label}</span>
+                  <b>{item.formattedValue}</b>
+                </div>
+              ))}
+              <code>{explanation.arithmetic}</code>
+            </div>
+          ) : (
+            <p>No qualifying journey to calculate.</p>
+          )}
+        </>,
+      );
+    }
+    if (component.type === "checklist")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Requirements</p>
+              <h2 id={headingId}>
+                {heading(component, "Your travel checklist")}
+              </h2>
+            </div>
+          </div>
+          <div className="wl-checklist">
+            <div>
+              <Check />
+              Arrive by {formatClock(view.assumptions.arrival_deadline_minutes)}
+            </div>
+            {view.requirements.map((id) => (
+              <div key={id}>
+                <Check />
+                {id.replaceAll("_", " ")}
+              </div>
+            ))}
+            <div>
+              <Briefcase />
+              {view.assumptions.checked_bag
+                ? "Checked bag included"
+                : "Carry-on only"}
+            </div>
+          </div>
+        </>,
+      );
+    if (component.type === "exclusions")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Exact exclusions</p>
+              <h2 id={headingId}>
+                {heading(
+                  component,
+                  `${result.excluded.length} journeys miss a requirement`,
+                )}
+              </h2>
+            </div>
+            {state.hidden.length > 0 && (
+              <button
+                onClick={() =>
+                  commit((current) => ({ ...current, hidden: [] }))
+                }
+              >
+                Restore {state.hidden.length} hidden
+              </button>
+            )}
+          </div>
+          <div className="wl-exclusion-list">
+            {result.excluded
+              .slice(0, component.limit ?? result.excluded.length)
+              .map((row) => (
+                <button
+                  key={row.journey.id}
+                  onClick={() =>
+                    openCalculation(row.journey.id, "door_to_door_time")
+                  }
+                >
+                  <span>
+                    {row.journey.operator} · {row.journey.service}
+                  </span>
+                  <strong>{row.reasons.join(" · ")}</strong>
+                </button>
+              ))}
+          </div>
+        </>,
+      );
+    if (component.type === "relaxations")
+      return shell(
+        <>
+          <div className="wl-section-heading">
+            <div>
+              <p className="wl-kicker">Nothing silently relaxed</p>
+              <h2 id={headingId}>
+                {heading(component, "Exact ways to recover choices")}
+              </h2>
+            </div>
+          </div>
+          <div className="wl-relaxation-grid">
+            {relaxations.map((relaxation) => (
+              <button
+                key={relaxation.id}
+                onClick={() =>
+                  commit((current) => {
+                    const assumptions = {
+                      ...current.view!.assumptions,
+                      [relaxation.id]: relaxation.value,
+                    };
+                    return {
+                      ...current,
+                      view: {
+                        ...current.view!,
+                        assumptions,
+                        title: journeyViewTitle(assumptions),
+                      },
+                    };
+                  })
+                }
+              >
+                <span>{relaxation.label}</span>
+                <strong>
+                  Show {relaxation.count} {plural(relaxation.count, "journey")}
+                </strong>
+              </button>
+            ))}
+          </div>
+        </>,
+      );
+    return null;
+  };
+  return (
+    <main className="wl-shell wl-decision wl-composed-page" id="top">
+      <section className="wl-decision-hero">
+        <div>
+          <p className="wl-kicker">Door to door · built for this trip</p>
+          <h1 tabIndex={-1} id="wl-decision-heading">
+            {journeyViewTitle(view.assumptions)}
+          </h1>
+          <p>
+            Wayline keeps every schedule and calculation authoritative while the
+            interface changes around this journey.
+          </p>
+        </div>
+        <div className="wl-history">
+          <button
+            type="button"
+            onClick={() =>
+              commit((current) => ({
+                ...current,
+                view: null,
+                compared: [],
+                calculation: null,
+              }))
+            }
+          >
+            <RotateCcw size={15} />
+            Start over
+          </button>
+          <button type="button" onClick={undo} disabled={!state.past.length}>
+            <Undo2 size={15} />
+            Undo
+          </button>
+          <button type="button" onClick={redo} disabled={!state.future.length}>
+            Redo
+            <Redo2 size={15} />
+          </button>
+        </div>
+      </section>
+      <div className="wl-composition-grid">
+        {view.composition.map(renderComponent)}
+      </div>
+      {state.compared.length >= 2 &&
+        !view.composition.some(
+          (component) => component.type === "comparison",
+        ) && (
+          <JourneyComparison
+            state={state}
+            rows={result.all}
+            close={() =>
+              commit((current) => ({
+                ...current,
+                compared: [],
+                comparisonRows: null,
+              }))
+            }
+            remove={toggleCompare}
+          />
+        )}
+      {state.saved.some(
+        (id) => !result.ranked.some((row) => row.journey.id === id),
+      ) && (
+        <section className="wl-saved-warning">
+          <h2>Saved, but outside the current result</h2>
+          {result.all
+            .filter(
+              (row) => state.saved.includes(row.journey.id) && !row.eligible,
+            )
+            .map((row) => (
+              <p key={row.journey.id}>
+                <strong>
+                  {row.journey.operator} {row.journey.service}
+                </strong>{" "}
+                · {row.reasons.join(" · ")}
+              </p>
+            ))}
+        </section>
+      )}
+      <footer className="wl-footer">
+        <p>
+          Schedules, operators, fares and performance bands are fictional
+          deterministic demonstration data.
+        </p>
+        <SiteLinks current="journeys" />
+      </footer>
+      <CalculationDialog
+        state={state}
+        close={() =>
+          replaceTransient((current) => ({ ...current, calculation: null }))
+        }
+      />
+    </main>
+  );
+}
+
 export default function JourneysPage() {
   const [state, setState] = useState<AppState>(blankState);
   const [hydrated, setHydrated] = useState(false);
   const [mcpAvailable, setMcpAvailable] = useState(false);
-  const [building, setBuilding] = useState(false);
+  const [building, setBuilding] = useState<{
+    phase: "working" | "result";
+    count?: number;
+  } | null>(null);
+  const [recomposing, setRecomposing] = useState(false);
   const [liveMessage, setLiveMessage] = useState("");
   const stateRef = useRef(state);
 
   useEffect(() => {
     queueMicrotask(() => {
       try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
+        const url = new URL(location.href);
+        const fresh = url.searchParams.get("fresh") === "1";
+        if (fresh) {
+          localStorage.removeItem(STORAGE_KEY);
+          url.searchParams.delete("fresh");
+          history.replaceState(
+            history.state,
+            "",
+            `${url.pathname}${url.search}${url.hash}`,
+          );
+          stateRef.current = blankState;
+          setState(blankState);
+        } else {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (!stored) throw new Error("No saved journey view");
           const restored = restoreState(
             JSON.parse(stored) as Partial<AppState>,
           );
@@ -1594,7 +2516,8 @@ export default function JourneysPage() {
           setState(restored);
         }
       } catch {
-        localStorage.removeItem(STORAGE_KEY);
+        stateRef.current = blankState;
+        setState(blankState);
       }
       setHydrated(true);
     });
@@ -1650,6 +2573,7 @@ export default function JourneysPage() {
   }, []);
 
   const handlers = useMemo<JourneyWebMcpHandlers>(() => {
+    const round = (value: number) => Math.round(value * 10) / 10;
     const compact = (current: AppState) => {
       const config = current.view ?? defaultJourneyView;
       return evaluateJourneys(config, current.hidden).all.map((row) => ({
@@ -1661,17 +2585,26 @@ export default function JourneysPage() {
         arrival_terminal: row.journey.arrivalTerminal,
         departure_time: formatClock(row.journey.departureMinute),
         advertised_duration_minutes: row.journey.advertisedMinutes,
-        total_door_to_door_minutes: row.totalMinutes,
+        total_door_to_door_minutes: round(row.totalMinutes),
         arrival_time: formatClock(row.arrivalMinute),
-        arrival_slack_minutes: row.arrivalSlackMinutes,
-        walking_km: row.walkingKm,
-        disruption_risk_percent: row.riskPercent,
+        arrival_slack_minutes: round(row.arrivalSlackMinutes),
+        walking_km: round(row.walkingKm),
+        disruption_risk_percent: round(row.riskPercent),
         fare_gbp: row.journey.fare,
         carbon_kg_co2e: row.journey.carbonKg,
         direct: row.journey.direct,
         connection_slack_minutes: row.journey.connectionSlackMinutes,
         punctuality_band: row.journey.punctualityBand,
         step_free: row.journey.stepFree,
+        complete_journey_components: current.view
+          ? completeJourneySegments(row, current.view).map((segment) => ({
+              id: segment.id,
+              label: segment.label,
+              from: segment.from,
+              to: segment.to,
+              minutes: segment.minutes,
+            }))
+          : [],
         eligible: row.eligible,
         exclusion_reasons: row.reasons,
         saved: current.saved.includes(row.journey.id),
@@ -1717,13 +2650,60 @@ export default function JourneysPage() {
         supported_requirements: requirementIds,
         supported_metrics: metricIds,
         comparison_row_ids: comparisonRowIds,
+        native_component_types: journeyComponentTypes,
+        native_component_settings: {
+          ordered: true,
+          supported_fields: [
+            "heading",
+            "variant",
+            "metric_ids",
+            "record_ids",
+            "assumption_ids",
+            "group_by",
+            "sort_metric_id",
+            "sort_direction",
+            "emphasized_record_ids",
+            "emphasized_metric_ids",
+            "width",
+            "limit",
+            "delay_minutes",
+            "show_only_differences",
+          ],
+          supported_grouping_ids: journeyGroupingIds,
+          delay_minutes: { minimum: 0, maximum: 180 },
+        },
+        supported_composition_operations: [
+          "set_composition",
+          "add_component",
+          "remove_component",
+          "move_component",
+          "configure_component",
+        ],
+        supported_human_state_operations: [
+          "save_journey",
+          "unsave_journey",
+          "hide_journey",
+          "restore_journey",
+          "lock_control",
+          "unlock_control",
+        ],
         journey_view: current.view,
+        current_composition: current.view
+          ? serializeComposition(current.view.composition)
+          : [],
         locked_assumption_ids: current.locked,
         saved_journey_ids: current.saved,
         hidden_journey_ids: current.hidden,
         compared_journey_ids: current.compared,
         selected_comparison_row_ids: current.comparisonRows,
         open_calculation: current.calculation,
+        human_state: {
+          owner: "traveller",
+          locked_control_ids: current.locked,
+          saved_journey_ids: current.saved,
+          hidden_journey_ids: current.hidden,
+          compared_journey_ids: current.compared,
+        },
         journeys: compact(current),
       });
     };
@@ -1751,6 +2731,19 @@ export default function JourneysPage() {
           "Provide the complete supported assumptions object.",
         );
       const assumptions = raw as Record<string, unknown>;
+      let composition: NativeComponent[];
+      try {
+        composition = parseComposition(
+          input.components,
+          journeyCompositionOptions,
+        );
+      } catch (error) {
+        return toolFailure(
+          "INVALID_COMPOSITION",
+          error instanceof Error ? error.message : "Invalid page composition.",
+          { valid_component_types: journeyComponentTypes },
+        );
+      }
       const proposed: JourneyView = {
         title: "",
         assumptions: {
@@ -1786,6 +2779,7 @@ export default function JourneysPage() {
                     : "asc",
               }
             : { metricId: "door_to_door_time", direction: "asc" },
+        composition,
       };
       if (current.view)
         for (const id of current.locked)
@@ -1794,11 +2788,20 @@ export default function JourneysPage() {
       const invalid = validateView(proposed);
       if (invalid) return toolFailure("INVALID_VIEW", invalid);
       abortIfNeeded(signal);
-      setBuilding(true);
-      await new Promise((resolve) => setTimeout(resolve, 180));
+      const createdCount = evaluateJourneys(proposed, current.hidden).ranked
+        .length;
+      const reduceMotion = matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      setBuilding({ phase: "working" });
+      if (!reduceMotion)
+        await new Promise((resolve) => setTimeout(resolve, 650));
+      setBuilding({ phase: "result", count: createdCount });
+      if (!reduceMotion)
+        await new Promise((resolve) => setTimeout(resolve, 300));
       abortIfNeeded(signal);
       if (stateRef.current.revision !== current.revision) {
-        setBuilding(false);
+        setBuilding(null);
         return toolFailure(
           "STALE_VIEW",
           "The page changed while the view was being prepared.",
@@ -1810,7 +2813,8 @@ export default function JourneysPage() {
         view: proposed,
         calculation: null,
       }));
-      setBuilding(false);
+      setBuilding(null);
+      setLiveMessage(`${createdCount} qualify.`);
       history.replaceState({ journey: false }, "");
       history.pushState({ journey: true }, "");
       await delayPaint();
@@ -1823,6 +2827,7 @@ export default function JourneysPage() {
         excluded_count: evaluated.excluded.length,
         ranked_journey_ids: evaluated.ranked.map((row) => row.journey.id),
         journeys: compact(next),
+        current_composition: serializeComposition(proposed.composition),
       });
     };
     const updateJourneyView = async (
@@ -1844,13 +2849,17 @@ export default function JourneysPage() {
       if (
         !Array.isArray(input.operations) ||
         !input.operations.length ||
-        input.operations.length > 12
+        input.operations.length > 16
       )
         return toolFailure(
           "INVALID_OPERATIONS",
-          "Provide one to twelve supported operations.",
+          "Provide one to sixteen supported operations.",
         );
       const draft = cloneView(current.view);
+      let locked = [...current.locked];
+      let saved = [...current.saved];
+      let hidden = [...current.hidden];
+      let compared = [...current.compared];
       const changed: string[] = [];
       const lockMap: Partial<Record<string, ControlId>> = {
         set_origin: "origin",
@@ -1868,6 +2877,132 @@ export default function JourneysPage() {
           );
         const operation = item as Record<string, unknown>,
           type = String(operation.operation);
+        if (type === "set_composition") {
+          try {
+            draft.composition = parseComposition(
+              operation.components,
+              journeyCompositionOptions,
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error
+                ? error.message
+                : "Invalid page composition.",
+            );
+          }
+          changed.push("composition");
+          continue;
+        }
+        if (type === "add_component") {
+          try {
+            draft.composition = insertComponent(
+              draft.composition,
+              parseNativeComponent(
+                operation.component,
+                journeyCompositionOptions,
+              ),
+              operation.position == null
+                ? undefined
+                : Number(operation.position),
+            );
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error ? error.message : "Invalid component.",
+            );
+          }
+          changed.push("composition");
+          continue;
+        }
+        if (
+          type === "remove_component" ||
+          type === "move_component" ||
+          type === "configure_component"
+        ) {
+          try {
+            const componentId = String(operation.component_id);
+            if (type === "remove_component")
+              draft.composition = removeComponent(
+                draft.composition,
+                componentId,
+              );
+            else if (type === "move_component")
+              draft.composition = moveComponent(
+                draft.composition,
+                componentId,
+                Number(operation.position),
+              );
+            else {
+              const parsed = parseNativeComponentPatch(
+                operation.component,
+                journeyCompositionOptions,
+              );
+              draft.composition = configureComponent(
+                draft.composition,
+                componentId,
+                parsed,
+              );
+            }
+          } catch (error) {
+            return toolFailure(
+              "INVALID_COMPOSITION",
+              error instanceof Error
+                ? error.message
+                : "Invalid component operation.",
+            );
+          }
+          changed.push("composition");
+          continue;
+        }
+        if (
+          [
+            "save_journey",
+            "unsave_journey",
+            "hide_journey",
+            "restore_journey",
+          ].includes(type)
+        ) {
+          const journeyId = String(operation.journey_id);
+          if (!journeyById.has(journeyId))
+            return toolFailure(
+              "UNKNOWN_JOURNEY",
+              `Unknown journey “${journeyId}”.`,
+              { valid_ids: journeys.map((journey) => journey.id) },
+            );
+          if (type === "save_journey")
+            saved = [...new Set([...saved, journeyId])];
+          else if (type === "unsave_journey")
+            saved = saved.filter((id) => id !== journeyId);
+          else if (type === "hide_journey") {
+            hidden = [...new Set([...hidden, journeyId])];
+            compared = compared.filter((id) => id !== journeyId);
+          } else hidden = hidden.filter((id) => id !== journeyId);
+          changed.push(journeyId);
+          continue;
+        }
+        if (type === "lock_control" || type === "unlock_control") {
+          const controlId = String(operation.control_id) as ControlId;
+          if (
+            ![
+              "origin",
+              "destination",
+              "checked_bag",
+              "arrival_deadline_minutes",
+              "minimum_connection_slack_minutes",
+              "reliability_weight",
+            ].includes(controlId)
+          )
+            return toolFailure(
+              "INVALID_OPERATION",
+              `Unsupported control “${controlId}”.`,
+            );
+          if (type === "lock_control")
+            locked = [...new Set([...locked, controlId])];
+          else locked = locked.filter((id) => id !== controlId);
+          changed.push(controlId);
+          continue;
+        }
         const numericValue = Number(operation.value);
         const validPayload =
           (type === "set_origin" &&
@@ -1909,7 +3044,7 @@ export default function JourneysPage() {
             `Operation “${type}” is missing a supported, correctly typed value.`,
           );
         const control = lockMap[type];
-        if (control && current.locked.includes(control))
+        if (control && locked.includes(control))
           return toolFailure(
             "LOCKED_ASSUMPTION",
             `${control} is locked by the traveller.`,
@@ -1965,8 +3100,36 @@ export default function JourneysPage() {
       const invalid = validateView(draft);
       if (invalid) return toolFailure("INVALID_VIEW", invalid);
       abortIfNeeded(signal);
-      const next = commit((present) => ({ ...present, view: draft }));
+      const unchanged =
+        JSON.stringify(draft) === JSON.stringify(current.view) &&
+        JSON.stringify(locked) === JSON.stringify(current.locked) &&
+        JSON.stringify(saved) === JSON.stringify(current.saved) &&
+        JSON.stringify(hidden) === JSON.stringify(current.hidden) &&
+        JSON.stringify(compared) === JSON.stringify(current.compared);
+      if (unchanged)
+        return jsonSafe({
+          ok: true,
+          revision: current.revision,
+          changed_controls: [],
+          current_composition: serializeComposition(draft.composition),
+        });
+      setRecomposing(true);
+      const next = commit((present) => ({
+        ...present,
+        view: draft,
+        locked,
+        saved,
+        hidden,
+        compared,
+        comparisonRows: compared.length < 2 ? null : present.comparisonRows,
+      }));
       await delayPaint();
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
+        await new Promise((resolve) => setTimeout(resolve, 420));
+      setRecomposing(false);
+      setLiveMessage(
+        `Journey page recomposed. ${evaluateJourneys(draft, hidden).ranked.length} journeys qualify.`,
+      );
       const evaluated = evaluateJourneys(draft, next.hidden);
       return jsonSafe({
         ok: true,
@@ -1976,6 +3139,7 @@ export default function JourneysPage() {
         excluded_count: evaluated.excluded.length,
         ranked_journey_ids: evaluated.ranked.map((row) => row.journey.id),
         journeys: compact(next),
+        current_composition: serializeComposition(draft.composition),
       });
     };
     const compareJourneys = async (
@@ -2128,8 +3292,11 @@ export default function JourneysPage() {
     return () => removeEventListener("popstate", onPop);
   }, [replaceTransient]);
 
+  if (!hydrated) return <div className="wl-hydration-shell" aria-busy="true" />;
   return (
-    <div className="wayline-app">
+    <div
+      className={`wayline-app${building ? " is-building" : ""}${recomposing ? " is-recomposing" : ""}`}
+    >
       <WaylineHeader mcpAvailable={mcpAvailable} />
       <div className="sr-only" aria-live="polite">
         {liveMessage}
@@ -2137,10 +3304,21 @@ export default function JourneysPage() {
       {building && (
         <output className="wl-building">
           <span />
-          Building your door-to-door view…
+          {building.phase === "working"
+            ? "Rebuilding 18 results around the whole journey…"
+            : `${building.count ?? 0} qualify.`}
         </output>
       )}
-      {state.view ? (
+      {state.view?.composition?.length ? (
+        <ComposedJourneyPage
+          state={state}
+          commit={commit}
+          replaceTransient={replaceTransient}
+          undo={undo}
+          redo={redo}
+          announce={setLiveMessage}
+        />
+      ) : state.view ? (
         <DecisionPage
           state={state}
           commit={commit}
