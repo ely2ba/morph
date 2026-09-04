@@ -1,175 +1,184 @@
-# Morph — final demo recording script
+# Morph — final video script
 
-Target runtime: **2 minutes 30 seconds**. Record at 1440 × 900 with the ChatGPT browser assistant visible whenever a request is entered. Use the public deployment, not localhost. Record each route as a separate take, then edit the takes together.
+**Final runtime:** approximately 2 minutes 40 seconds
 
-Before recording:
+**Deliverable:** one public YouTube video with narration
 
-- Close unrelated tabs and notifications.
-- Use a fresh browser profile or clear the three route-specific demo states.
-- Set browser zoom to 100% and keep the same window size throughout.
-- Let fonts and images load before each take.
-- Keep the pointer in the lower-right margin unless an action is being demonstrated.
-- Do not record or show developer tools, tool schemas, JSON, console output, or this script.
+**Recording size:** 1440 × 900, browser zoom 100%
 
-## 0:00–0:08 — The ordinary travel page
+Record the routes as separate clean takes and edit them into one video. Keep the real ChatGPT browser assistant visible whenever a request is sent. Keep at least the first Wayline request and the Wayline follow-up uninterrupted from Send through the site-native transformation.
 
-**Clean-start URL:** `https://morph.carry-protocol.workers.dev/journeys?fresh=1`
+Before recording, turn off **System Settings → Accessibility → Display → Reduce motion** so the complete Morph choreography is visible. Close unrelated tabs and notifications. Open every route with its clean-start URL, wait for the `fresh=1` parameter to disappear, and let images load.
 
-**Before recording:** Wait for the query parameter to clear automatically. The Wayline hero, search controls, and “18 journeys” result count should be visible. Do not open the assistant yet.
+## 0:00–0:14 — Show the product working immediately
 
-**Picture:** Begin on the ordinary page. Hold for two seconds, then move the pointer once from the advertised duration area toward the result count. Do not scroll.
+**Open:** https://morph.carry-protocol.workers.dev/journeys?fresh=1
 
-**Narration:**
+**Picture and action**
 
-> “Travel search says this flight takes one hour ten. But that is not the journey from my door to my stay.”
+- Begin on the ordinary Wayline page with the 18-result count and AeroSwift AS 104's advertised 1h 10m visible if possible.
+- Hold for no more than two seconds.
+- Open the real ChatGPT browser assistant with the request already copied, paste it, and press Send.
+- Keep the page and assistant visible while the actual WebMCP tool runs and the ordinary page starts transforming.
 
-## 0:08–0:25 — Ask for the first interface
-
-**URL:** Remain on `https://morph.carry-protocol.workers.dev/journeys` after the clean-start redirect.
-
-**Action:** Open the real ChatGPT browser assistant. Paste the following request, pause just long enough for it to be readable, then send it.
-
-**Exact prompt:**
+**Exact assistant request**
 
 > I’m leaving from Shoreditch and staying in Amsterdam’s Jordaan. Build a complete door-to-door decision interface. Rank these by total time, walking, and missed-connection risk. I care twice as much about reliability as speed, have a checked bag, and need to arrive by 7pm. Keep my trip assumptions directly editable at the top so I can lock them. Show ranked options and a timeline that separates travel, waiting, terminal buffers, walking, luggage, and transfers.
 
-**Narration:**
+**Narration**
 
-> “Instead of working through filters, I ask the browser assistant for the interface I need.”
+> “A travel site says this flight takes one hour ten. But that is only the flight. I ask for the journey I am actually taking, including walking, waiting, luggage, risk, and my arrival deadline.”
 
-**Transformation pause:** After sending, leave the ordinary results visible. Do not move or scroll while Wayline moves through “Reading 18 journeys,” “Calculating total time and connection risk,” and “Composing your journey view.” Let the focused result heading remain on screen for two seconds after the transition completes.
+**Optional on-screen caption:** `A real request. A real WebMCP tool call.`
 
-## 0:25–0:40 — Reveal the complete journey
+## 0:14–0:31 — Reveal the first composition
 
-**URL:** `https://morph.carry-protocol.workers.dev/journeys`
+**Picture and action**
 
-**Picture:** Show the new structure and the “7 qualify” result. Scroll only enough to put AeroSwift AS 104 and its advertised-versus-complete duration in the middle third of the frame.
+- Let “Reading 18 journeys,” “Calculating total time and connection risk,” and “Composing your journey view” remain visible.
+- Do not scroll during the transformation.
+- Keep the assistant's real `create_journey_view` activity visible for a beat.
+- When the page settles, show the new heading and 7-result count.
 
-**Narration:**
+**Narration**
 
-> “Wayline receives a real WebMCP request. It keeps authority over every time, rule, and calculation; the assistant chooses how to compose them. Eighteen results become seven complete journeys.”
+> “Wayline exposes structured WebMCP tools, its own records, calculations, actions, and native components. The assistant decides how to compose them, while Wayline still decides what is true. Eighteen results become seven journeys that actually satisfy the trip.”
 
-## 0:40–0:54 — Open the exact calculation
+**On-screen caption:** `18 search results → 7 viable journeys`
 
-**URL:** `https://morph.carry-protocol.workers.dev/journeys`
+## 0:31–0:44 — Show the hidden decision metric
 
-**Action:** Open AS 104’s door-to-door calculation.
+**Picture and action**
 
-**Picture:** Pause with both “1h 10m” and “4h 26m” visible if possible. Otherwise show the drawer with `35 + 85 + 70 + 15 + 30 + 31 = 266 minutes`. Hold for two seconds.
+- Scroll calmly to AeroSwift AS 104.
+- Frame its `1h 10m in search → 4h 26m door to door` reveal.
+- Click **See every minute**.
+- Hold on the exact arithmetic for two seconds.
 
-**Narration:**
+**Narration**
 
-> “That one-hour-ten flight is really four hours twenty-six door to door. Every minute comes from Wayline’s own calculation.”
+> “That one-hour-ten flight is really four hours twenty-six door to door. Every minute is inspectable and calculated by the website, rather than invented in a chat response.”
 
-## 0:54–1:05 — Make human-owned choices
+**On-screen caption:** `1h 10m advertised → 4h 26m door to door`
 
-**URL:** `https://morph.carry-protocol.workers.dev/journeys`
+## 0:44–0:57 — Give the human authority
 
-**Action:** Close the calculation. Save **Northstar Rail NR 914 at 07:16**, then lock the **checked luggage** choice. Make each click deliberate and pause briefly after the visual confirmation.
+**Picture and action**
 
-**Narration:**
+- Close the calculation.
+- Click **Save** on Northstar Rail NR 914 at 07:16.
+- Cut out the scroll if necessary, then show the editable assumptions at the top.
+- Click the lock beside **Luggage: Checked bag**.
+- Pause briefly after each visible confirmation.
 
-> “I save the seven-sixteen train and lock checked luggage. Those are my choices, not suggestions from the model.”
+**Narration**
 
-## 1:05–1:25 — Recompose the same page
+> “Now I save the seven-sixteen train and lock checked luggage. These are human decisions. The assistant can reorganize the page, but it cannot silently overwrite them.”
 
-**URL:** Remain on `https://morph.carry-protocol.workers.dev/journeys`; do not reload or use a clean-start link.
+**On-screen caption:** `Human choices are protected`
 
-**Action:** Open the browser assistant and send the follow-up below.
+## 0:57–1:14 — Ask again and recompose
 
-**Exact prompt:**
+**Picture and action**
+
+- Stay on the same page. Do not reload.
+- Open the browser assistant, paste the follow-up, and press Send.
+- Keep the current page visible while its real components move, disappear, and reassemble.
+- Let the assistant's `update_journey_view` call remain visible for a beat.
+
+**Exact follow-up request**
 
 > I’m staying in De Pijp now. Turn this into a delay stress test and chronological day timeline. Keep a compact summary of my saved and locked choices visible. Preserve my saved train and locked luggage.
 
-**Transformation pause:** Keep the current interface visible while the affected components rearrange. Do not scroll during the transition. After completion, hold on the new timeline for two seconds.
+**Narration**
 
-**Narration:**
+> “My stay changes, so I ask for a delay stress test and a chronological day plan. The same page visibly rearranges itself around the new task without resetting what I already decided.”
 
-> “My stay changes. The same page becomes a delay stress test and day timeline. It does not reset.”
+## 1:14–1:29 — Prove persistence
 
-## 1:25–1:36 — Prove preservation
+**Picture and action**
 
-**URL:** `https://morph.carry-protocol.workers.dev/journeys`
+- Show **De Pijp** in the new heading.
+- Point once to **1 saved**, once to **1 locked**, and once to the saved NR 914 marker in the new composition.
+- Avoid circling the cursor.
 
-**Picture:** Point once to “De Pijp,” once to the saved NR 914 state, and once to the checked-luggage lock. Avoid circling the cursor.
+**Narration**
 
-**Narration:**
+> “The saved train and luggage lock survive. That is the collaboration loop: ask, compose, edit, and ask again. The assistant handles composition, the website holds truth, and the human keeps authority.”
 
-> “The saved train and luggage lock survive. The result is not in chat. It is still Wayline—live, editable, and ready for another request.”
+**On-screen caption:** `Assistant = composition · Website = truth · Human = authority`
 
-## 1:36–1:54 — Hearth & Home
+## 1:29–1:51 — Prove it works for shopping
 
-**Clean-start URL:** `https://morph.carry-protocol.workers.dev/?fresh=1`
+**Open:** https://morph.carry-protocol.workers.dev/?fresh=1
 
-**Before entering the prompt:** Wait for the query parameter to clear. Show the ordinary product grid and its 28-product count for two seconds.
+**Picture and action**
 
-**Action:** Open the browser assistant and send this request.
+- Show the ordinary 28-product grid for one second.
+- Open the browser assistant, paste the request, and press Send.
+- Preserve the real Send-to-transformation moment, but shorten dead assistant latency if necessary.
+- Show **9 of 28** when the decision workspace settles.
+- Open the Elmridge E8 Eco ownership calculation and frame **£1,081.40**.
 
-**Exact prompt:**
+**Exact assistant request**
 
 > I need a washer for a 60 × 62 × 85 cm alcove. I do five loads a week, pay 29p/kWh and 0.4p per litre for water, and keep appliances for eight years. Compose a decision summary, assumptions, cost-versus-noise chart, ranked shortlist, and comparison. Exclude anything that will not fit or arrive within four days.
 
-**Transformation pause:** Do not scroll while Hearth & Home moves through “Reading 28 machines,” “Calculating fit and true cost,” and “Composing your decision view.” Pause after “9 fit.” appears.
+**Narration**
 
-**Narration:**
+> “The same interaction model works on a completely different site. One sentence turns twenty-eight washers into the nine that fit this home, delivery window, and running-cost needs. Even an eight-year ownership total opens into the retailer’s exact arithmetic.”
 
-> “The pattern works for shopping too. Hearth & Home begins as a normal twenty-eight-product grid. One sentence turns it into a fit-and-cost workspace.”
+**On-screen caption:** `28 products → 9 that actually fit`
 
-## 1:54–2:05 — Inspect the washer arithmetic
+## 1:51–2:11 — Prove it works for information
 
-**URL:** `https://morph.carry-protocol.workers.dev/`
+**Open:** https://morph.carry-protocol.workers.dev/edition?fresh=1
 
-**Action:** Show “9 of 28,” then open the Elmridge E8 Eco ownership calculation.
+**Picture and action**
 
-**Picture:** Frame the £1,081.40 total and its purchase, energy, and water components. Do not scroll inside the drawer unless one short movement is essential.
+- Show the ordinary 30-article homepage for one second.
+- Open the browser assistant, paste the request, and press Send.
+- Let the visible feed transform.
+- Hold on **5 developments · 9m 48s** and frame at least one original-reporting or provenance marker.
 
-**Narration:**
-
-> “Nine machines qualify, and every eight-year total opens into the retailer’s own arithmetic.”
-
-## 2:05–2:22 — The Current
-
-**Clean-start URL:** `https://morph.carry-protocol.workers.dev/edition?fresh=1`
-
-**Before entering the prompt:** Wait for the query parameter to clear. Show the ordinary 30-article homepage for two seconds.
-
-**Action:** Open the browser assistant and send this request.
-
-**Exact prompt:**
+**Exact assistant request**
 
 > Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.
 
-**Transformation pause:** Hold the ordinary feed while The Current moves through “Reading 30 reports,” “Clustering repeated coverage and verified facts,” and “Composing your finite edition.” Pause on “5 developments · 9m 48s.” Then open a visible coverage comparison or provenance control.
+**Narration**
 
-**Narration:**
+> “And here, thirty overlapping articles become five actual developments in a finite nine-minute-forty-eight edition. Repeated coverage is merged, while original reporting, disagreements, and the provenance of every verified fact remain visible.”
 
-> “The Current begins as thirty overlapping headlines. A ten-minute request merges repeats while preserving who first reported each verified fact. Thirty headlines become five developments worth nine minutes forty-eight.”
+**On-screen caption:** `30 articles → 5 developments · 9m 48s`
 
-## 2:22–2:30 — Closing frame
+## 2:11–2:42 — State the larger idea
 
-**URL:** `https://morph.carry-protocol.workers.dev/showcase`
+**Open:** https://morph.carry-protocol.workers.dev/showcase
 
-**Before recording:** Load the showcase separately and leave it at the exact top position.
+**Picture and action**
 
-**Picture:** Cut to the showcase hero. Keep the title, tagline, and three-site visual fully visible. Do not move the cursor. Hold the final frame for one silent beat after the narration.
+- Start at the showcase hero where Shopping, Travel, and News are all visible.
+- During the second sentence, cut to the collaboration-loop section.
+- During the examples, overlay these words one at a time over the three-site visual: `Recipes`, `Public services`, `Retail`, `Learning`, `Any cooperating website`.
+- End back on the Morph hero and hold silently for one second.
 
-**Narration:**
+**Narration**
 
-> “Three websites, countless useful interfaces. The page becomes the interface you need.”
+> “These three sites demonstrate a broader idea. Any cooperating website can expose trusted facts, actions, and native components, then let each person ask for the interface their task requires. A recipe can become a timed cooking plan. A government site can show only the rules that apply. A store can rank true cost and delivery. The data here is fictional; the interaction is real. Interfaces no longer have to predict every person and task in advance. Morph lets the page become the interface you need.”
 
-## Cursor and scrolling rules
+**Final on-screen caption:**
 
-- Use one deliberate movement per reveal.
-- Never cover counts, formulas, saved state, locks, or focused headings.
-- Do not scroll while a composition is moving.
-- Prefer a cut between stable views to a fast scroll.
-- Keep the browser assistant narrow enough that the webpage remains legible.
-- Leave each final composition visible for at least two seconds.
+`Morph`
 
-## Fallback take when a browser-assistant call is slow
+`The page becomes the interface you need.`
 
-If a call takes longer than five seconds, keep the visible prompt submission and roughly two seconds of honest waiting, then cut directly to the moment immediately before the real site-native transformation starts. This removes dead time without implying that the response was instantaneous.
+## Editing rules
 
-If a call fails, stop that take, reopen the exact clean-start URL, and send the identical prompt again. Do not use a fake page control, manually load prepared state, or substitute a pre-recorded transformation. Preserve at least one uninterrupted request-to-transformation sequence in the final edit.
-
-If the final cut runs long, shorten pauses and dead assistant latency first. Do not remove the Wayline follow-up, the save-and-lock actions, or the proof that those human choices survive.
+- Use one final video. The route recordings are only source takes.
+- Make direct cuts between stable views; never use flashy stock transitions.
+- Preserve at least one uninterrupted WebMCP request-to-transformation sequence.
+- If an assistant response is slow, retain Send, about two seconds of honest waiting, and the complete site-native transformation. Remove only dead latency.
+- Keep the assistant narrow enough that the page remains legible.
+- Do not show developer tools, schemas, JSON, localhost, this script, or unrelated browser tabs.
+- Burn in only the six short captions specified above.
+- Speak calmly at roughly 145–150 words per minute. Do not rush the three numbers or the trust line.
