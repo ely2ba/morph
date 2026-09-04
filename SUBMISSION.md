@@ -2,7 +2,7 @@
 
 ## Project title
 
-The You-Shaped Web
+Morph
 
 ## Tagline
 
@@ -18,7 +18,7 @@ The web still asks every person to adapt to one interface chosen in advance. Pro
 
 ## What it does
 
-The You-Shaped Web contains three convincing ordinary websites. Hearth & Home can turn a 28-product washer grid into questionnaires, tables, charts, comparisons, cost breakdowns, calendars, or recommendation boards. Wayline can turn 18 advertised travel results into complete journeys, timelines, stress tests, and tradeoff views. The Current can turn 30 overlapping articles into finite editions, event timelines, source maps, and reading queues.
+Morph contains three convincing ordinary websites. Hearth & Home can turn a 28-product washer grid into questionnaires, tables, charts, comparisons, cost breakdowns, calendars, or recommendation boards. Wayline can turn 18 advertised travel results into complete journeys, timelines, stress tests, and tradeoff views. The Current can turn 30 overlapping articles into finite editions, event timelines, source maps, and reading queues.
 
 A real browser-assistant request composes those interfaces on the existing page. The result remains interactive, and a follow-up can reshape it without discarding relevant saves, pins, edits, hidden choices, or locks.
 
@@ -48,7 +48,7 @@ A shopper can save a washer, adjust a measurement, and ask for a simpler decisio
 
 ## How it differs from receiving an answer in ChatGPT, Atlas, Comet, or another autonomous browser
 
-A conventional chat answer is separated from the source page and quickly becomes stale. An autonomous browser can operate controls the page already has. The You-Shaped Web makes the webpage itself the persistent output: native, editable, stateful, and able to become a structurally different interface after the next request.
+A conventional chat answer is separated from the source page and quickly becomes stale. An autonomous browser can operate controls the page already has. Morph makes the webpage itself the persistent output: native, editable, stateful, and able to become a structurally different interface after the next request.
 
 The assistant does not claim authority over product specifications, journey times, article facts, formulas, or provenance. It asks the cooperating page to compose an interface from the page’s own records, calculations, actions, and visual components.
 
@@ -103,24 +103,24 @@ We also learned that persistence is part of the interaction model, not a conveni
 
 ## Public links
 
-- Showcase: **https://you-shaped-web.carry-protocol.workers.dev/showcase**
-- Hearth & Home: **https://you-shaped-web.carry-protocol.workers.dev/**
-- Wayline: **https://you-shaped-web.carry-protocol.workers.dev/journeys**
-- The Current: **https://you-shaped-web.carry-protocol.workers.dev/edition**
-- Repository: **https://github.com/ely2ba/you-shaped-web**
+- Showcase: **https://morph.carry-protocol.workers.dev/showcase**
+- Hearth & Home: **https://morph.carry-protocol.workers.dev/**
+- Wayline: **https://morph.carry-protocol.workers.dev/journeys**
+- The Current: **https://morph.carry-protocol.workers.dev/edition**
+- Repository: **https://github.com/ely2ba/morph**
 - Demo video: **Add the public YouTube URL here after recording**
 
 ## Exact testing instructions
 
-1. Open `https://you-shaped-web.carry-protocol.workers.dev/journeys?fresh=1` and confirm the ordinary page shows 18 travel results.
+1. Open `https://morph.carry-protocol.workers.dev/journeys?fresh=1` and confirm the ordinary page shows 18 travel results.
 2. Use ChatGPT’s real browser assistant to send the first Wayline prompt below.
 3. Confirm the page—not chat—recomposes, shows 7 eligible journeys, and reveals AS 104’s 4h 26m complete journey.
 4. Open AS 104’s calculation and confirm `35 + 85 + 70 + 15 + 30 + 31 = 266 minutes`.
 5. Save Northstar Rail NR 914 at 07:16 and lock checked luggage.
 6. Send the Wayline follow-up. Confirm De Pijp appears everywhere, the page becomes a delay-aware timeline, and the saved train and luggage lock remain.
-7. Open `https://you-shaped-web.carry-protocol.workers.dev/?fresh=1`, run the canonical washer request, and confirm 9 of 28 machines qualify.
+7. Open `https://morph.carry-protocol.workers.dev/?fresh=1`, run the canonical washer request, and confirm 9 of 28 machines qualify.
 8. Open the Elmridge E8 Eco calculation and confirm the £1,081.40 total and purchase, energy, and water components.
-9. Open `https://you-shaped-web.carry-protocol.workers.dev/edition?fresh=1`, run the ten-minute edition request, and confirm 30 articles become 5 developments totaling 9m 48s.
+9. Open `https://morph.carry-protocol.workers.dev/edition?fresh=1`, run the ten-minute edition request, and confirm 30 articles become 5 developments totaling 9m 48s.
 10. Replace that edition with the tidal-energy timeline, then the provenance map. Confirm repeated reports and original sources remain inspectable.
 11. Directly edit a control on each route, then verify undo, redo, reload persistence, and the route-specific `?fresh=1` reset.
 12. Create an impossible request and confirm at least one displayed exact relaxation produces a feasible result.

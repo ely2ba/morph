@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { Check, Copy, ExternalLink, Sparkles, X } from 'lucide-react';
-import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { Check, Copy, ExternalLink, Sparkles, X } from "lucide-react";
+import Link from "next/link";
+import { useRef, useState } from "react";
 
 type PromptLink = { href: string; label: string };
 
 export function AssistantPromptPanel({
   prompts,
   links,
-  className = '',
+  className = "",
 }: {
   prompts: string[];
   links: PromptLink[];
@@ -67,13 +67,13 @@ export function AssistantPromptPanel({
                   ) : (
                     <Copy size={15} aria-hidden="true" />
                   )}
-                  {copied === index ? 'Copied' : 'Copy request'}
+                  {copied === index ? "Copied" : "Copy request"}
                 </button>
               </article>
             ))}
           </div>
         </section>
-        <nav aria-label="Explore The You-Shaped Web">
+        <nav aria-label="Explore Morph">
           <Link href="/showcase">
             Project showcase <ExternalLink size={14} aria-hidden="true" />
           </Link>

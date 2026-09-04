@@ -17,15 +17,15 @@ export const metadata: Metadata = {
   description:
     "A conventional washer catalogue that can become the decision interface this shopper needs.",
   metadataBase: new URL(
-    process.env.SITE_URL ?? "https://you-shaped-web.carry-protocol.workers.dev",
+    process.env.SITE_URL ?? "https://morph.carry-protocol.workers.dev",
   ),
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Hearth & Home | The You-Shaped Web",
+    title: "Hearth & Home | Morph",
     description:
       "From a 28-product grid to the decision tool this shopper needs.",
     url: "/",
-    siteName: "The You-Shaped Web",
+    siteName: "Morph",
     images: [
       {
         url: "/submission/hearth-home-decision-workspace.png",
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Hearth & Home | The You-Shaped Web",
+    title: "Hearth & Home | Morph",
     description:
       "From a 28-product grid to the decision tool this shopper needs.",
     images: ["/submission/hearth-home-decision-workspace.png"],

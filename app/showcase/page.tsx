@@ -1,10 +1,10 @@
-import { ArrowDown, ArrowRight, ExternalLink } from 'lucide-react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { CopyRequestButton } from './copy-request-button';
+import { ArrowDown, ArrowRight, ExternalLink } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { CopyRequestButton } from "./copy-request-button";
 
 type ShowcaseProof = {
-  id: 'hearth' | 'wayline' | 'current';
+  id: "hearth" | "wayline" | "current";
   name: string;
   statement: string;
   reveal: {
@@ -26,136 +26,136 @@ type ShowcaseProof = {
 
 const proofs: ShowcaseProof[] = [
   {
-    id: 'hearth',
-    name: 'Hearth & Home',
+    id: "hearth",
+    name: "Hearth & Home",
     statement:
-      'From product grid to whatever decision tool this shopper needs.',
+      "From product grid to whatever decision tool this shopper needs.",
     reveal: {
-      before: '28',
-      beforeLabel: 'machines',
-      after: '9',
-      afterLabel: 'fit',
+      before: "28",
+      beforeLabel: "machines",
+      after: "9",
+      afterLabel: "fit",
     },
-    cleanHref: '/?fresh=1',
-    cleanLabel: 'Open clean Hearth & Home',
+    cleanHref: "/?fresh=1",
+    cleanLabel: "Open clean Hearth & Home",
     frames: [
       {
-        src: '/submission/hearth-home-ordinary.png',
-        label: 'Ordinary page',
-        caption: 'A familiar 28-product catalogue',
+        src: "/submission/hearth-home-ordinary.png",
+        label: "Ordinary page",
+        caption: "A familiar 28-product catalogue",
       },
       {
-        src: '/submission/hearth-home-decision-workspace.png',
-        label: 'Composed result',
-        caption: 'A fit, cost and quietness decision workspace',
+        src: "/submission/hearth-home-decision-workspace.png",
+        label: "Composed result",
+        caption: "A fit, cost and quietness decision workspace",
         featured: true,
       },
       {
-        src: '/submission/hearth-home-alternative-composition.png',
-        label: 'Follow-up composition',
-        caption: 'A simple recommendation with tradeoffs and delivery',
+        src: "/submission/hearth-home-alternative-composition.png",
+        label: "Follow-up composition",
+        caption: "A simple recommendation with tradeoffs and delivery",
       },
     ],
     prompts: [
-      'Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.',
-      'I measured it: 58 cm deep. Remove the questions, make the remaining products a compact table, and put the quietest machine below £550 first.',
-      'Replace the table with a simple recommendation for my parents. Show what they sacrifice with each alternative and add a delivery calendar.',
+      "Turn this catalog into a decision workspace for a renter with a shallow alcove. Begin with the questions I still need to answer, then show a shortlist, a cost-versus-noise chart, and a comparison.",
+      "I measured it: 58 cm deep. Remove the questions, make the remaining products a compact table, and put the quietest machine below £550 first.",
+      "Replace the table with a simple recommendation for my parents. Show what they sacrifice with each alternative and add a delivery calendar.",
     ],
   },
   {
-    id: 'wayline',
-    name: 'Wayline',
+    id: "wayline",
+    name: "Wayline",
     statement:
-      'From advertised durations to timelines, stress tests, and complete journeys.',
+      "From advertised durations to timelines, stress tests, and complete journeys.",
     reveal: {
-      before: '1h 10m',
-      beforeLabel: 'advertised',
-      after: '4h 26m',
-      afterLabel: 'door to door',
+      before: "1h 10m",
+      beforeLabel: "advertised",
+      after: "4h 26m",
+      afterLabel: "door to door",
     },
-    cleanHref: '/journeys?fresh=1',
-    cleanLabel: 'Open clean Wayline',
+    cleanHref: "/journeys?fresh=1",
+    cleanLabel: "Open clean Wayline",
     frames: [
       {
-        src: '/submission/wayline-ordinary.png',
-        label: 'Ordinary page',
-        caption: '18 results ranked by advertised duration',
+        src: "/submission/wayline-ordinary.png",
+        label: "Ordinary page",
+        caption: "18 results ranked by advertised duration",
       },
       {
-        src: '/submission/wayline-complete-journey.png',
-        label: 'Composed result',
-        caption: 'A complete-journey decision view',
+        src: "/submission/wayline-complete-journey.png",
+        label: "Composed result",
+        caption: "A complete-journey decision view",
         featured: true,
       },
       {
-        src: '/submission/wayline-delay-timeline.png',
-        label: 'Follow-up composition',
-        caption: 'A 20-minute delay stress test',
+        src: "/submission/wayline-delay-timeline.png",
+        label: "Follow-up composition",
+        caption: "A 20-minute delay stress test",
       },
     ],
     prompts: [
-      'Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.',
-      'Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.',
-      'Now make it a simple day plan containing only step-free options that reach De Pijp before 7pm.',
+      "Build a complete door-to-door timeline. Separate travel, waiting, terminal buffers, walking, and luggage time.",
+      "Turn this into a delay stress test. Show what happens to every arrival after a 20-minute disruption.",
+      "Now make it a simple day plan containing only step-free options that reach De Pijp before 7pm.",
     ],
   },
   {
-    id: 'current',
-    name: 'The Current',
+    id: "current",
+    name: "The Current",
     statement:
-      'From an endless feed to editions, event timelines, and source maps.',
+      "From an endless feed to editions, event timelines, and source maps.",
     reveal: {
-      before: '30',
-      beforeLabel: 'articles',
-      after: '5',
-      afterLabel: 'developments',
+      before: "30",
+      beforeLabel: "articles",
+      after: "5",
+      afterLabel: "developments",
     },
-    cleanHref: '/edition?fresh=1',
-    cleanLabel: 'Open clean The Current',
+    cleanHref: "/edition?fresh=1",
+    cleanLabel: "Open clean The Current",
     frames: [
       {
-        src: '/submission/the-current-ordinary.png',
-        label: 'Ordinary page',
-        caption: 'A news homepage full of repeated coverage',
+        src: "/submission/the-current-ordinary.png",
+        label: "Ordinary page",
+        caption: "A news homepage full of repeated coverage",
       },
       {
-        src: '/submission/the-current-finite-edition.png',
-        label: 'Composed result',
-        caption: 'A finite 9m 48s reading edition',
+        src: "/submission/the-current-finite-edition.png",
+        label: "Composed result",
+        caption: "A finite 9m 48s reading edition",
         featured: true,
       },
       {
-        src: '/submission/the-current-provenance-map.png',
-        label: 'Follow-up composition',
-        caption: 'A source-preserving provenance map',
+        src: "/submission/the-current-provenance-map.png",
+        label: "Follow-up composition",
+        caption: "A source-preserving provenance map",
       },
     ],
     prompts: [
-      'Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.',
-      'Replace the edition with a chronological timeline of the tidal-energy story. Include only moments when a new verified fact appeared.',
-      'Turn the timeline into a provenance map showing who reported each fact first, which publications repeated it, and where the evidence changed.',
+      "Give me a finite ten-minute edition. Merge repeated coverage, preserve original reporting, and put genuinely new developments first.",
+      "Replace the edition with a chronological timeline of the tidal-energy story. Include only moments when a new verified fact appeared.",
+      "Turn the timeline into a provenance map showing who reported each fact first, which publications repeated it, and where the evidence changed.",
     ],
   },
 ];
 
 const mobileProofs = [
   {
-    src: '/submission/hearth-home-mobile.png',
-    alt: 'Hearth & Home composed interface at 390 pixels wide',
-    name: 'Hearth & Home',
-    detail: 'Shopping decisions',
+    src: "/submission/hearth-home-mobile.png",
+    alt: "Hearth & Home composed interface at 390 pixels wide",
+    name: "Hearth & Home",
+    detail: "Shopping decisions",
   },
   {
-    src: '/submission/wayline-mobile.png',
-    alt: 'Wayline composed interface at 390 pixels wide',
-    name: 'Wayline',
-    detail: 'Complete journeys',
+    src: "/submission/wayline-mobile.png",
+    alt: "Wayline composed interface at 390 pixels wide",
+    name: "Wayline",
+    detail: "Complete journeys",
   },
   {
-    src: '/submission/the-current-mobile.png',
-    alt: 'The Current composed interface at 390 pixels wide',
-    name: 'The Current',
-    detail: 'Finite reading',
+    src: "/submission/the-current-mobile.png",
+    alt: "The Current composed interface at 390 pixels wide",
+    name: "The Current",
+    detail: "Finite reading",
   },
 ];
 
@@ -164,9 +164,9 @@ function ScreenshotFrame({
   label,
   caption,
   featured = false,
-}: ShowcaseProof['frames'][number]) {
+}: ShowcaseProof["frames"][number]) {
   return (
-    <figure className={`ysw-shot${featured ? ' is-featured' : ''}`}>
+    <figure className={`ysw-shot${featured ? " is-featured" : ""}`}>
       <a
         href={src}
         target="_blank"
@@ -213,7 +213,7 @@ function ProofSection({
         <div className="ysw-proof-heading">
           <div>
             <p className="ysw-kicker">
-              <span>{String(index + 1).padStart(2, '0')}</span>
+              <span>{String(index + 1).padStart(2, "0")}</span>
               {proof.name}
             </p>
             <h2 id={`${proof.id}-title`}>{proof.statement}</h2>
@@ -259,7 +259,7 @@ function ProofSection({
         <div className="ysw-request-grid">
           {proof.prompts.map((prompt, promptIndex) => (
             <article key={prompt} className="ysw-request-card">
-              <span>{String(promptIndex + 1).padStart(2, '0')}</span>
+              <span>{String(promptIndex + 1).padStart(2, "0")}</span>
               <p>“{prompt}”</p>
               <CopyRequestButton request={prompt} />
             </article>
@@ -279,14 +279,14 @@ export default function ShowcasePage() {
 
       <header className="ysw-header">
         <a className="ysw-wordmark" href="#top">
-          The You-Shaped Web
+          Morph
         </a>
         <nav aria-label="Showcase navigation">
           <a href="#hearth">Shopping</a>
           <a href="#wayline">Travel</a>
           <a href="#current">News</a>
           <a
-            href="https://github.com/ely2ba/you-shaped-web"
+            href="https://github.com/ely2ba/morph"
             target="_blank"
             rel="noreferrer"
           >
@@ -299,7 +299,7 @@ export default function ShowcasePage() {
         <div className="ysw-hero-inner">
           <div className="ysw-hero-copy">
             <p className="ysw-hero-kicker">A live WebMCP demonstration</p>
-            <h1 id="showcase-title">The You-Shaped Web</h1>
+            <h1 id="showcase-title">Morph</h1>
             <p className="ysw-tagline">
               The page becomes the interface you need.
             </p>
@@ -375,7 +375,7 @@ export default function ShowcasePage() {
         <div className="ysw-wrap">
           <p className="ysw-kicker">The collaboration loop</p>
           <h2 id="loop-title">
-            Ask <span>→</span> page composes <span>→</span> person edits{' '}
+            Ask <span>→</span> page composes <span>→</span> person edits{" "}
             <span>→</span> ask again
           </h2>
           <p>
@@ -453,7 +453,7 @@ export default function ShowcasePage() {
       <footer className="ysw-footer">
         <div className="ysw-wrap">
           <div>
-            <strong>The You-Shaped Web</strong>
+            <strong>Morph</strong>
             <p>The page becomes the interface you need.</p>
           </div>
           <nav aria-label="Open the live experiences">
@@ -461,7 +461,7 @@ export default function ShowcasePage() {
             <Link href="/journeys?fresh=1">Wayline</Link>
             <Link href="/edition?fresh=1">The Current</Link>
             <a
-              href="https://github.com/ely2ba/you-shaped-web"
+              href="https://github.com/ely2ba/morph"
               target="_blank"
               rel="noreferrer"
             >

@@ -1,14 +1,14 @@
-# The You-Shaped Web
+# Morph
 
 **The page becomes the interface you need.**
 
-[Explore the live showcase](https://you-shaped-web.carry-protocol.workers.dev/showcase)
+[Explore the live showcase](https://morph.carry-protocol.workers.dev/showcase)
 
-![The You-Shaped Web showcase](public/submission/showcase-hero.png)
+![Morph showcase](public/submission/showcase-hero.png)
 
 Three ordinary websites. One sentence. Countless useful interfaces, assembled around the person using them.
 
-The You-Shaped Web explores a different interaction model for the web. A browser assistant asks a cooperating webpage to compose the interface a person needs. The website keeps authority over its records, verified facts, calculations, and supported actions. The assistant chooses which native pieces—questions, tables, charts, timelines, comparisons, provenance, and more—to arrange.
+Morph explores a different interaction model for the web. A browser assistant asks a cooperating webpage to compose the interface a person needs. The website keeps authority over its records, verified facts, calculations, and supported actions. The assistant chooses which native pieces—questions, tables, charts, timelines, comparisons, provenance, and more—to arrange.
 
 The result stays on the webpage. A person can edit, save, pin, hide, compare, or lock choices directly, then ask for a completely different arrangement without losing the decisions that still matter.
 
@@ -60,10 +60,10 @@ These are not prepared whole-page presets. Follow-ups can add, remove, move, and
 
 ## Try it
 
-- [Hearth & Home](https://you-shaped-web.carry-protocol.workers.dev/) · [clean start](https://you-shaped-web.carry-protocol.workers.dev/?fresh=1)
-- [Wayline](https://you-shaped-web.carry-protocol.workers.dev/journeys) · [clean start](https://you-shaped-web.carry-protocol.workers.dev/journeys?fresh=1)
-- [The Current](https://you-shaped-web.carry-protocol.workers.dev/edition) · [clean start](https://you-shaped-web.carry-protocol.workers.dev/edition?fresh=1)
-- [Project showcase](https://you-shaped-web.carry-protocol.workers.dev/showcase)
+- [Hearth & Home](https://morph.carry-protocol.workers.dev/) · [clean start](https://morph.carry-protocol.workers.dev/?fresh=1)
+- [Wayline](https://morph.carry-protocol.workers.dev/journeys) · [clean start](https://morph.carry-protocol.workers.dev/journeys?fresh=1)
+- [The Current](https://morph.carry-protocol.workers.dev/edition) · [clean start](https://morph.carry-protocol.workers.dev/edition?fresh=1)
+- [Project showcase](https://morph.carry-protocol.workers.dev/showcase)
 
 Use ChatGPT’s browser assistant on one of the clean-start pages and try a request below.
 
@@ -130,8 +130,8 @@ All brands, products, journeys, operators, publications, reporters, people, and 
 
 ## Links
 
-- [Live showcase](https://you-shaped-web.carry-protocol.workers.dev/showcase)
-- [Public repository](https://github.com/ely2ba/you-shaped-web)
+- [Live showcase](https://morph.carry-protocol.workers.dev/showcase)
+- [Public repository](https://github.com/ely2ba/morph)
 
 ## License
 

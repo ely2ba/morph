@@ -7,11 +7,11 @@ export const metadata: Metadata = {
     "Compare fictional travel results, then turn them into a transparent door-to-door decision tool.",
   alternates: { canonical: "/journeys" },
   openGraph: {
-    title: "Wayline | The You-Shaped Web",
+    title: "Wayline | Morph",
     description:
       "From advertised durations to timelines, stress tests, and complete journeys.",
     url: "/journeys",
-    siteName: "The You-Shaped Web",
+    siteName: "Morph",
     images: [
       {
         url: "/submission/wayline-complete-journey.png",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Wayline | The You-Shaped Web",
+    title: "Wayline | Morph",
     description:
       "From advertised durations to timelines, stress tests, and complete journeys.",
     images: ["/submission/wayline-complete-journey.png"],

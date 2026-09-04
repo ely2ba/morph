@@ -7,11 +7,11 @@ export const metadata: Metadata = {
     "Thirty fictional reports become a transparent edition built from verified, site-owned facts.",
   alternates: { canonical: "/edition" },
   openGraph: {
-    title: "The Current | The You-Shaped Web",
+    title: "The Current | Morph",
     description:
       "From an endless feed to finite editions, event timelines, and source maps.",
     url: "/edition",
-    siteName: "The You-Shaped Web",
+    siteName: "Morph",
     images: [
       {
         url: "/submission/the-current-finite-edition.png",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "The Current | The You-Shaped Web",
+    title: "The Current | Morph",
     description:
       "From an endless feed to finite editions, event timelines, and source maps.",
     images: ["/submission/the-current-finite-edition.png"],

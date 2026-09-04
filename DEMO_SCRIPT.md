@@ -1,4 +1,4 @@
-# The You-Shaped Web — final demo recording script
+# Morph — final demo recording script
 
 Target runtime: **2 minutes 30 seconds**. Record at 1440 × 900 with the ChatGPT browser assistant visible whenever a request is entered. Use the public deployment, not localhost. Record each route as a separate take, then edit the takes together.
 
@@ -13,7 +13,7 @@ Before recording:
 
 ## 0:00–0:08 — The ordinary travel page
 
-**Clean-start URL:** `https://you-shaped-web.carry-protocol.workers.dev/journeys?fresh=1`
+**Clean-start URL:** `https://morph.carry-protocol.workers.dev/journeys?fresh=1`
 
 **Before recording:** Wait for the query parameter to clear automatically. The Wayline hero, search controls, and “18 journeys” result count should be visible. Do not open the assistant yet.
 
@@ -25,7 +25,7 @@ Before recording:
 
 ## 0:08–0:25 — Ask for the first interface
 
-**URL:** Remain on `https://you-shaped-web.carry-protocol.workers.dev/journeys` after the clean-start redirect.
+**URL:** Remain on `https://morph.carry-protocol.workers.dev/journeys` after the clean-start redirect.
 
 **Action:** Open the real ChatGPT browser assistant. Paste the following request, pause just long enough for it to be readable, then send it.
 
@@ -41,7 +41,7 @@ Before recording:
 
 ## 0:25–0:40 — Reveal the complete journey
 
-**URL:** `https://you-shaped-web.carry-protocol.workers.dev/journeys`
+**URL:** `https://morph.carry-protocol.workers.dev/journeys`
 
 **Picture:** Show the new structure and the “7 qualify” result. Scroll only enough to put AeroSwift AS 104 and its advertised-versus-complete duration in the middle third of the frame.
 
@@ -51,7 +51,7 @@ Before recording:
 
 ## 0:40–0:54 — Open the exact calculation
 
-**URL:** `https://you-shaped-web.carry-protocol.workers.dev/journeys`
+**URL:** `https://morph.carry-protocol.workers.dev/journeys`
 
 **Action:** Open AS 104’s door-to-door calculation.
 
@@ -63,7 +63,7 @@ Before recording:
 
 ## 0:54–1:05 — Make human-owned choices
 
-**URL:** `https://you-shaped-web.carry-protocol.workers.dev/journeys`
+**URL:** `https://morph.carry-protocol.workers.dev/journeys`
 
 **Action:** Close the calculation. Save **Northstar Rail NR 914 at 07:16**, then lock the **checked luggage** choice. Make each click deliberate and pause briefly after the visual confirmation.
 
@@ -73,7 +73,7 @@ Before recording:
 
 ## 1:05–1:25 — Recompose the same page
 
-**URL:** Remain on `https://you-shaped-web.carry-protocol.workers.dev/journeys`; do not reload or use a clean-start link.
+**URL:** Remain on `https://morph.carry-protocol.workers.dev/journeys`; do not reload or use a clean-start link.
 
 **Action:** Open the browser assistant and send the follow-up below.
 
@@ -89,7 +89,7 @@ Before recording:
 
 ## 1:25–1:36 — Prove preservation
 
-**URL:** `https://you-shaped-web.carry-protocol.workers.dev/journeys`
+**URL:** `https://morph.carry-protocol.workers.dev/journeys`
 
 **Picture:** Point once to “De Pijp,” once to the saved NR 914 state, and once to the checked-luggage lock. Avoid circling the cursor.
 
@@ -99,7 +99,7 @@ Before recording:
 
 ## 1:36–1:54 — Hearth & Home
 
-**Clean-start URL:** `https://you-shaped-web.carry-protocol.workers.dev/?fresh=1`
+**Clean-start URL:** `https://morph.carry-protocol.workers.dev/?fresh=1`
 
 **Before entering the prompt:** Wait for the query parameter to clear. Show the ordinary product grid and its 28-product count for two seconds.
 
@@ -117,7 +117,7 @@ Before recording:
 
 ## 1:54–2:05 — Inspect the washer arithmetic
 
-**URL:** `https://you-shaped-web.carry-protocol.workers.dev/`
+**URL:** `https://morph.carry-protocol.workers.dev/`
 
 **Action:** Show “9 of 28,” then open the Elmridge E8 Eco ownership calculation.
 
@@ -129,7 +129,7 @@ Before recording:
 
 ## 2:05–2:22 — The Current
 
-**Clean-start URL:** `https://you-shaped-web.carry-protocol.workers.dev/edition?fresh=1`
+**Clean-start URL:** `https://morph.carry-protocol.workers.dev/edition?fresh=1`
 
 **Before entering the prompt:** Wait for the query parameter to clear. Show the ordinary 30-article homepage for two seconds.
 
@@ -147,7 +147,7 @@ Before recording:
 
 ## 2:22–2:30 — Closing frame
 
-**URL:** `https://you-shaped-web.carry-protocol.workers.dev/showcase`
+**URL:** `https://morph.carry-protocol.workers.dev/showcase`
 
 **Before recording:** Load the showcase separately and leave it at the exact top position.
 
