@@ -2,15 +2,24 @@
 
 **Web interfaces no longer have to be designed around every possible task in advance.**
 
-[Try Wayline](https://morph.carry-protocol.workers.dev/journeys?fresh=1) · [Explore the live showcase](https://morph.carry-protocol.workers.dev/showcase)
+[Hearth & Home](https://morph.carry-protocol.workers.dev/?fresh=1) · [Wayline](https://morph.carry-protocol.workers.dev/journeys?fresh=1) · [The Current](https://morph.carry-protocol.workers.dev/edition?fresh=1) · [Live showcase](https://morph.carry-protocol.workers.dev/showcase)
 
 ![Morph showcase](public/submission/showcase-hero.png)
+
+Three deliberately different websites demonstrate one interaction model:
+
+| Shopping | Travel | News |
+| --- | --- | --- |
+| **28 → 9** | **1h 10m → 4h 26m** | **30 → 5** |
+| A catalog becomes the decision tool this home needs. | A displayed duration becomes the complete journey this traveler needs. | A feed becomes the finite edition this reader needs. |
+
+The examples are proof of range, not the boundary of the idea. On any cooperating website, different people can describe different goals and receive different native interfaces over the same trusted facts and actions. The website does not need a developer to have predicted and built every complete screen in advance.
+
+## One deep example: the whole journey
 
 Most travel sites rank a journey by the time spent on the advertised train or flight. A traveler actually needs to know when to leave home, how much walking and waiting is involved, whether luggage breaks a connection, and when they will reach the final address.
 
 Morph lets the traveler say that in one sentence. The cooperating website then composes a native interface around the decision while keeping control of its own records, calculations, and supported actions.
-
-## The hero story: the whole journey
 
 | Ordinary travel results | Interface composed for the decision |
 | --- | --- |
@@ -46,15 +55,9 @@ The assistant does not generate arbitrary markup or invent answers. It selects a
 
 This is more than personalized UI. The useful interface does not need to have been predicted and built as a complete screen beforehand, yet it remains a real part of the website: interactive, inspectable, persistent, and bounded by first-party data.
 
-## One model, three everyday problems
+## Two more proofs of range
 
-Wayline is the main demonstration. Hearth & Home and The Current show that the interaction model generalizes beyond travel.
-
-| Experience | What the ordinary page shows | What the person actually needs |
-| --- | --- | --- |
-| **Wayline** | 18 journeys and an advertised **1h 10m** duration | 7 viable choices and the real **4h 26m** door-to-door journey |
-| **Hearth & Home** | 28 washing machines | 9 machines that actually fit the home, budget, delivery window, and ownership needs |
-| **The Current** | 30 overlapping articles | 5 distinct developments that fit into **9m 48s** |
+Wayline gives the clearest continuous story. Hearth & Home and The Current show the same model working for very different people, information, calculations, and interface components.
 
 ### Hearth & Home
 
@@ -71,6 +74,17 @@ A product grid can become a fit-and-cost workspace, compact comparison, price-ve
 | ![The Current ordinary 30-article homepage](public/submission/the-current-ordinary.png) | ![The Current finite ten-minute edition](public/submission/the-current-finite-edition.png) |
 
 An endless feed becomes **5 distinct developments totaling 9m 48s**. Duplicate coverage is merged, original reporting remains visible, and every verified fact can be traced to its source. The same material can become an event timeline or provenance map.
+
+## Where this can go
+
+The practical limit is the truthful capabilities and native components a cooperating website chooses to expose, rather than a fixed menu of interfaces. The same model could let someone ask:
+
+- a retailer to replace sticker prices with price per usable unit, include delivery and required accessories, and remove anything arriving too late;
+- a recipe site to scale dinner for two, convert to metric, account for one oven shelf, and order instructions by when each action should happen;
+- a government or service site to show only the sections that apply to a person's situation while keeping the original language beside each explanation;
+- a property, education, finance, or healthcare portal to reorganize dense first-party information around the particular comparison or next action that matters to that person.
+
+One person might need a compact table, another a timeline, and another an explanation with every calculation expanded. Each can get a useful interface without moving the result into chat or surrendering the website's authority over its domain.
 
 ## Why WebMCP
 
