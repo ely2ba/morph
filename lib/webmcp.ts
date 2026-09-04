@@ -29,6 +29,7 @@ const assumptionIds = Object.keys(assumptionMeta);
 const metricIds = Object.keys(metricMeta);
 const requirementIds = ['in_stock', 'fits_opening', 'delivery_within_days', 'minimum_capacity_kg', 'maximum_purchase_price', 'machine_type'];
 const derivedMetricIds = metricIds.filter((id) => !['purchase_price', 'spin_noise_db', 'capacity_kg'].includes(id));
+const comparisonRowIds = ['eligible', 'ownership_cost', 'annual_running_cost', 'running_cost_per_cycle', 'physical_clearance', 'delivery_slack', 'capacity', 'energy_per_100', 'water_per_cycle', 'spin_noise', 'spin_speed', 'cycle_duration', 'machine_type', 'installed_dimensions', 'warranty'];
 
 const metricPair = {
   type: 'object',
@@ -56,7 +57,7 @@ const definitions = (handlers: WebMcpHandlers): ToolDefinition[] => [
   {
     name: 'read_page',
     title: 'Read washing-machine page',
-    description: 'Read this washing-machine page before creating or changing a decision view. Returns supported shopper inputs with exact units and examples, requirements, calculated metrics, comparison fields, current revision, locked assumptions, eligible products, shortlist, hidden products, and comparison.',
+    description: 'Read this washing-machine page before creating or changing a decision view. Returns supported shopper inputs with exact units and examples, requirements, calculated metrics, current view mode, open calculation, selected comparison rows, current revision, locks, eligible products, shortlist, and hidden products.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, untrustedContentHint: false, consequentialHint: false },
     execute: (input, options) => handlers.readPage(input, options?.signal),
@@ -102,8 +103,8 @@ const definitions = (handlers: WebMcpHandlers): ToolDefinition[] => [
   {
     name: 'compare_products',
     title: 'Compare washing machines',
-    description: 'Compare two to four washing machines inside the current decision page. Call read_page first and use its current revision as base_revision. The retailer supplies every raw and calculated comparison value using the current assumptions and marks products that fail a current requirement.',
-    inputSchema: { type: 'object', properties: { base_revision: { type: 'integer', minimum: 0 }, product_ids: { type: 'array', minItems: 2, maxItems: 4, uniqueItems: true, items: { type: 'string' } }, row_ids: { type: 'array', maxItems: 12, uniqueItems: true, items: { type: 'string' } } }, required: ['base_revision', 'product_ids'], additionalProperties: false },
+    description: 'Compare two to four washing machines inside the current decision page. Call read_page first and use its current revision as base_revision. When row_ids is supplied, the page renders exactly those rows in that order; when omitted, it renders personalized rows followed by meaningful differences. The response returns the rows actually rendered.',
+    inputSchema: { type: 'object', properties: { base_revision: { type: 'integer', minimum: 0 }, product_ids: { type: 'array', minItems: 2, maxItems: 4, uniqueItems: true, items: { type: 'string' } }, row_ids: { type: 'array', minItems: 1, maxItems: comparisonRowIds.length, uniqueItems: true, items: { type: 'string', enum: comparisonRowIds } } }, required: ['base_revision', 'product_ids'], additionalProperties: false },
     annotations: { readOnlyHint: false, untrustedContentHint: false, consequentialHint: false },
     execute: (input, options) => handlers.compareProducts(input, options?.signal),
   },

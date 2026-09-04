@@ -50,6 +50,17 @@ const seeds: readonly Seed[] = [
 ];
 
 const one = (n: number) => Math.round(n * 10) / 10;
+const catalogImages = [
+  '/images/washers/washer-ald-a6.jpg',
+  '/images/washers/washer-bri-b7.jpg',
+  '/images/washers/washer-cal-c8.jpg',
+  '/images/washers/washer-dov-d8.jpg',
+  '/images/washers/washer-elm-e8.jpg',
+  '/images/washers/washer-fen-f10.jpg',
+  '/images/washers/washer-gra-g10.jpg',
+  '/images/washers/washer-hux-h8i.jpg',
+  '/images/washers/washer-ion-i11.jpg',
+] as const;
 
 export const catalog: Product[] = seeds.map((seed, index) => {
   const [id, brand, model, price, previous, type, capacityKg, energyClass, energyKwhPer100,
@@ -62,8 +73,8 @@ export const catalog: Product[] = seeds.map((seed, index) => {
     cycleMinutes, widthCm: one(cabinetWidth + sideClearanceCm * 2),
     heightCm: one(cabinetHeight + topClearanceCm), installedDepthCm: one(cabinetDepth + rearClearanceCm),
     sideClearanceCm, topClearanceCm, rearClearanceCm, warrantyYears,
-    inStock: stock === 'in_stock', deliveryDays, image: '/washer.jpg',
-    imagePosition: `${38 + (index % 5) * 6}% center`,
+    inStock: stock === 'in_stock', deliveryDays, image: catalogImages[index % catalogImages.length],
+    imagePosition: 'center center',
     tags: [brand.toLowerCase(), model.toLowerCase(), type, `${capacityKg}kg`, `energy-${energyClass.toLowerCase()}`],
   };
 });

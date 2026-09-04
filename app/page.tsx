@@ -23,7 +23,9 @@ const STORAGE_KEY = 'hearth-home-decision-v1';
 const metricIds = Object.keys(metricMeta) as MetricId[];
 const assumptionIds = Object.keys(assumptionMeta) as AssumptionId[];
 const requirementIds: RequirementId[] = ['in_stock', 'fits_opening', 'delivery_within_days', 'minimum_capacity_kg', 'maximum_purchase_price', 'machine_type'];
-const comparisonRowIds = ['eligible', 'ownership_cost', 'annual_running_cost', 'running_cost_per_cycle', 'physical_clearance', 'delivery_slack', 'capacity', 'energy_per_100', 'water_per_cycle', 'spin_noise', 'spin_speed', 'cycle_duration', 'machine_type', 'installed_dimensions', 'warranty'];
+const comparisonRowIds = ['eligible', 'ownership_cost', 'annual_running_cost', 'running_cost_per_cycle', 'physical_clearance', 'delivery_slack', 'capacity', 'energy_per_100', 'water_per_cycle', 'spin_noise', 'spin_speed', 'cycle_duration', 'machine_type', 'installed_dimensions', 'warranty'] as const;
+type ComparisonRowId = typeof comparisonRowIds[number];
+const LEGACY_DEFAULT_TITLE = 'The machines that fit your home and costs';
 
 type CalculationState = { productId: string; metricId: DerivedMetricId } | null;
 type Snapshot = {
@@ -32,6 +34,7 @@ type Snapshot = {
   shortlisted: string[];
   hidden: string[];
   compared: string[];
+  selectedComparisonRowIds: ComparisonRowId[] | null;
   viewMode: 'cards' | 'table' | 'plot';
   calculation: CalculationState;
   showExcluded: boolean;
@@ -40,17 +43,64 @@ type AppState = Snapshot & { revision: number; past: Snapshot[]; future: Snapsho
 
 const blankState: AppState = {
   decision: null, revision: 0, lockedIds: [], shortlisted: [], hidden: [], compared: [],
-  viewMode: 'cards', calculation: null, showExcluded: false, past: [], future: [],
+  selectedComparisonRowIds: null, viewMode: 'cards', calculation: null, showExcluded: false, past: [], future: [],
 };
 const snapshotOf = (state: AppState): Snapshot => ({
   decision: state.decision, lockedIds: state.lockedIds, shortlisted: state.shortlisted,
-  hidden: state.hidden, compared: state.compared, viewMode: state.viewMode,
+  hidden: state.hidden, compared: state.compared, selectedComparisonRowIds: state.selectedComparisonRowIds ?? null, viewMode: state.viewMode,
   calculation: state.calculation, showExcluded: state.showExcluded,
 });
+const migrateDecision = (decision: DecisionConfig | null | undefined) => decision
+  ? {
+    ...decision,
+    title: decision.title === LEGACY_DEFAULT_TITLE ? defaultDecision.title : decision.title,
+    requirements: decision.requirements.map((requirement) => {
+      const linkedValue = decision.assumptions[requirement.id as keyof Assumptions];
+      return requirement.value != null && linkedValue != null ? { ...requirement, value: linkedValue } : requirement;
+    }),
+  }
+  : null;
+function migrateSnapshot(raw: Partial<Snapshot> | undefined): Snapshot {
+  return {
+    decision: migrateDecision(raw?.decision),
+    lockedIds: raw?.lockedIds ?? [],
+    shortlisted: raw?.shortlisted ?? [],
+    hidden: raw?.hidden ?? [],
+    compared: raw?.compared ?? [],
+    selectedComparisonRowIds: Array.isArray(raw?.selectedComparisonRowIds)
+      ? raw.selectedComparisonRowIds.filter((id): id is ComparisonRowId => comparisonRowIds.includes(id as ComparisonRowId))
+      : null,
+    viewMode: raw?.viewMode ?? 'cards',
+    calculation: raw?.calculation ?? null,
+    showExcluded: raw?.showExcluded ?? false,
+  };
+}
+function migrateState(raw: Partial<AppState>): AppState {
+  return {
+    ...migrateSnapshot(raw),
+    revision: typeof raw.revision === 'number' ? raw.revision : 0,
+    past: (raw.past ?? []).map((item) => migrateSnapshot(item)),
+    future: (raw.future ?? []).map((item) => migrateSnapshot(item)),
+  };
+}
 const cloneDecision = (view: DecisionConfig): DecisionConfig => JSON.parse(JSON.stringify(view));
 const jsonSafe = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const delayPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 const abortIfNeeded = (signal?: AbortSignal) => signal?.throwIfAborted();
+const plural = (count: number, singular: string, many = `${singular}s`) => Math.abs(count) === 1 ? singular : many;
+const linkedRequirementIds = new Set<AssumptionId>(['delivery_within_days', 'minimum_capacity_kg', 'maximum_purchase_price', 'machine_type']);
+
+function setDecisionAssumption(config: DecisionConfig, id: AssumptionId, nextValue: number | string): DecisionConfig {
+  return {
+    ...config,
+    assumptions: { ...config.assumptions, [id]: nextValue },
+    requirements: config.requirements.map((requirement) =>
+      linkedRequirementIds.has(id) && requirement.id === id && requirement.value != null
+        ? { ...requirement, value: nextValue }
+        : requirement,
+    ),
+  };
+}
 
 function highlightAgentChanges(changed: string[]) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -125,15 +175,42 @@ function deliveryDate(days: number) {
 }
 
 function metricValue(metric: MetricId, value: number, precise = false) {
-  if (['purchase_price', 'ownership_cost', 'energy_cost', 'water_cost', 'annual_running_cost'].includes(metric)) return `£${precise ? value.toFixed(2) : Math.round(value).toLocaleString('en-GB')}`;
+  if (['purchase_price', 'ownership_cost', 'energy_cost', 'water_cost', 'annual_running_cost'].includes(metric)) return `£${value.toLocaleString('en-GB', { minimumFractionDigits: precise ? 2 : 0, maximumFractionDigits: precise ? 2 : 0 })}`;
   if (metric === 'running_cost_per_cycle') return `${(value * 100).toFixed(1)}p`;
   if (metric === 'spin_noise_db') return `${value.toFixed(0)} dB`;
   if (metric === 'capacity_kg') return `${value.toFixed(0)} kg`;
   if (metric === 'narrowest_clearance_cm') return `${value.toFixed(1)} cm`;
-  if (metric === 'delivery_slack_days') return `${value.toFixed(0)} day${value === 1 ? '' : 's'}`;
+  if (metric === 'delivery_slack_days') return `${value.toFixed(0)} ${plural(value, 'day')}`;
   if (metric === 'annual_energy_kwh') return `${Math.round(value).toLocaleString('en-GB')} kWh`;
   if (metric === 'annual_water_litres') return `${Math.round(value).toLocaleString('en-GB')} L`;
   return String(value);
+}
+
+type ComparisonRowDefinition = { id: ComparisonRowId; label: string; value: (row: Evaluation) => string };
+const comparisonRows: readonly ComparisonRowDefinition[] = [
+  { id: 'eligible', label: 'Eligible now', value: (row) => row.eligible ? 'Yes' : row.reasons.join(', ') },
+  { id: 'ownership_cost', label: 'Estimated ownership cost', value: (row) => metricValue('ownership_cost', row.metrics.ownership_cost) },
+  { id: 'annual_running_cost', label: 'Annual running cost', value: (row) => metricValue('annual_running_cost', row.metrics.annual_running_cost) },
+  { id: 'running_cost_per_cycle', label: 'Running cost per wash', value: (row) => metricValue('running_cost_per_cycle', row.metrics.running_cost_per_cycle) },
+  { id: 'physical_clearance', label: 'Physical clearance', value: (row) => `${row.clearances.width.toFixed(1)} / ${row.clearances.depth.toFixed(1)} / ${row.clearances.height.toFixed(1)} cm W/D/H` },
+  { id: 'delivery_slack', label: 'Delivery slack', value: (row) => metricValue('delivery_slack_days', row.metrics.delivery_slack_days) },
+  { id: 'capacity', label: 'Capacity', value: (row) => `${row.product.capacityKg} kg` },
+  { id: 'energy_per_100', label: 'Energy / 100 cycles', value: (row) => `${row.product.energyKwhPer100} kWh` },
+  { id: 'water_per_cycle', label: 'Water / cycle', value: (row) => `${row.product.waterLitresPerCycle} L` },
+  { id: 'spin_noise', label: 'Spin noise', value: (row) => `${row.product.noiseDb} dB · ${row.product.noiseClass}` },
+  { id: 'spin_speed', label: 'Spin speed', value: (row) => `${row.product.spinSpeed} rpm` },
+  { id: 'cycle_duration', label: 'Eco cycle', value: (row) => `${Math.floor(row.product.cycleMinutes / 60)}h ${row.product.cycleMinutes % 60}m` },
+  { id: 'machine_type', label: 'Machine type', value: (row) => row.product.type },
+  { id: 'installed_dimensions', label: 'Installed size', value: (row) => `${row.product.widthCm} × ${row.product.installedDepthCm} × ${row.product.heightCm} cm` },
+  { id: 'warranty', label: 'Warranty', value: (row) => `${row.product.warrantyYears} ${plural(row.product.warrantyYears, 'year')}` },
+];
+
+function renderedComparisonRows(rows: Evaluation[], selected: ComparisonRowId[] | null, showAll = false) {
+  if (selected) {
+    const byId = new Map(comparisonRows.map((row) => [row.id, row]));
+    return selected.map((id) => byId.get(id)).filter(Boolean) as ComparisonRowDefinition[];
+  }
+  return comparisonRows.filter((row, index) => showAll || index < 6 || new Set(rows.map(row.value)).size > 1);
 }
 
 function compactRows(state: AppState) {
@@ -195,7 +272,7 @@ function ProductDetail({ product, open, onOpenChange }: { product: Product | nul
     ['Spin noise', `${product.noiseDb} dB · class ${product.noiseClass}`], ['Maximum spin', `${product.spinSpeed} rpm`],
     ['Eco 40–60 duration', `${Math.floor(product.cycleMinutes / 60)}h ${product.cycleMinutes % 60}m`],
     ['Required installed size', `${product.widthCm} × ${product.installedDepthCm} × ${product.heightCm} cm W×D×H`],
-    ['Rear clearance included', `${product.rearClearanceCm} cm`], ['Warranty', `${product.warrantyYears} years`],
+    ['Rear clearance included', `${product.rearClearanceCm} cm`], ['Warranty', `${product.warrantyYears} ${plural(product.warrantyYears, 'year')}`],
   ];
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -221,7 +298,7 @@ function StandardPage({ onView }: { onView: (p: Product) => void }) {
   return (
     <main id="top" className="page-shell standard-page">
       <div className="breadcrumbs">Home <span>/</span> Laundry <span>/</span> Washing machines</div>
-      <div className="category-heading"><div><p className="eyebrow blue">Laundry</p><h1>Washing machines</h1><p>Thoughtfully selected machines, ready for real homes.</p></div><div className="count-medallion"><strong>{filtered.length}</strong><span>machines</span></div></div>
+      <div className="category-heading"><div><p className="eyebrow blue">Laundry</p><h1>Washing machines</h1><p>Thoughtfully selected machines, ready for real homes.</p></div><div className="count-medallion"><strong>{filtered.length}</strong><span>{plural(filtered.length, 'machine')}</span></div></div>
       <div className="catalog-layout">
         <aside className="filters" aria-label="Product filters">
           <div className="filter-title"><SlidersHorizontal size={17}/><strong>Filter by</strong><button onClick={clear}>Clear</button></div>
@@ -231,11 +308,11 @@ function StandardPage({ onView }: { onView: (p: Product) => void }) {
           <label>Capacity<select value={capacity} onChange={(e) => setCapacity(Number(e.target.value))}><option value="0">Any capacity</option><option value="8">8 kg or more</option><option value="9">9 kg or more</option><option value="10">10 kg or more</option></select></label>
         </aside>
         <section aria-label="Washing machines" className="catalog-results">
-          <div className="result-toolbar"><p><strong>{filtered.length} results</strong></p><label>Sort by <select value={sort} onChange={(e) => setSort(e.target.value)}><option value="relevance">Relevance</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option></select></label></div>
+          <div className="result-toolbar"><p><strong>{filtered.length} {plural(filtered.length, 'result')}</strong></p><label>Sort by <select value={sort} onChange={(e) => setSort(e.target.value)}><option value="relevance">Relevance</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option></select></label></div>
           {filtered.length ? <div className="standard-grid">{filtered.map((p) => <StandardCard key={p.id} product={p} onView={onView}/>)}</div> : <div className="empty-standard"><h2>No machines match these filters</h2><p>Try raising your price limit or clearing a filter.</p><Button onClick={clear}>Clear all filters</Button></div>}
         </section>
       </div>
-      <footer className="catalog-credit">Product photograph by A65 Design, used under the Unsplash License. Product names and specifications are fictional for this demonstration.</footer>
+      <footer className="catalog-credit">Product photography from Pexels, used under the <a href="https://www.pexels.com/license/" target="_blank" rel="noreferrer">Pexels licence</a>. Images are illustrative; product names and specifications are fictional for this demonstration.</footer>
     </main>
   );
 }
@@ -244,11 +321,16 @@ type AssumptionControlProps = { id: NumericAssumptionId; config: DecisionConfig;
 function AssumptionControl({ id, config, locked, onChange, onToggleLock }: AssumptionControlProps) {
   const meta = assumptionMeta[id];
   const value = config.assumptions[id] ?? meta.example;
+  const inputId = `assumption-${id}`;
+  const unit = id === 'cycles_per_week' ? plural(Number(value), 'wash', 'washes')
+    : id === 'ownership_years' ? plural(Number(value), 'year')
+      : id === 'delivery_within_days' ? plural(Number(value), 'day')
+        : meta.displayUnit;
   return (
-    <label className={`assumption-control ${locked ? 'is-locked' : ''}`} data-assumption={id}>
-      <span>{meta.label}<button type="button" onClick={() => onToggleLock(id)} aria-label={`${locked ? 'Unlock' : 'Lock'} ${meta.label}`} title={`${locked ? 'Unlock' : 'Lock'} this assumption`}>{locked ? <Lock size={14}/> : <LockOpen size={14}/>}</button></span>
-      <div><input type="number" min={meta.min} max={meta.max} step={meta.step} value={Number(value)} onChange={(e) => { const next = Number(e.target.value); if (Number.isFinite(next) && next >= meta.min && next <= meta.max) onChange(id, next); }}/><em>{meta.displayUnit}</em></div>
-    </label>
+    <div className={`assumption-control ${locked ? 'is-locked' : ''}`} data-assumption={id}>
+      <div className="assumption-label"><label htmlFor={inputId}>{meta.label}</label><button type="button" onClick={() => onToggleLock(id)} aria-label={`${locked ? 'Unlock' : 'Lock'} ${meta.label}`} title={`${locked ? 'Unlock' : 'Lock'} this assumption`}>{locked ? <Lock size={14}/> : <LockOpen size={14}/>}</button></div>
+      <div className="assumption-input"><input id={inputId} type="number" min={meta.min} max={meta.max} step={meta.step} value={Number(value)} onChange={(e) => { const next = Number(e.target.value); if (Number.isFinite(next) && next >= meta.min && next <= meta.max) onChange(id, next); }}/><em>{unit}</em></div>
+    </div>
   );
 }
 
@@ -273,7 +355,7 @@ function DecisionCard({ row, config, state, onCalculate, onShortlist, onCompare,
         </div>
         <p className="fit-line"><Check size={15}/><span><strong>Fits</strong> · {row.metrics.narrowest_clearance_cm.toFixed(1)} cm at the tightest point</span></p>
         <p className="capacity-line">{row.product.capacityKg} kg capacity · Energy class {row.product.energyClass}</p>
-        <p className="delivery-line"><PackageCheck size={15}/>{deliveryDate(row.product.deliveryDays)} · {Math.max(0, row.metrics.delivery_slack_days)} days before deadline</p>
+        <p className="delivery-line"><PackageCheck size={15}/>{deliveryDate(row.product.deliveryDays)} · {Math.max(0, row.metrics.delivery_slack_days)} {plural(Math.max(0, row.metrics.delivery_slack_days), 'day')} before deadline</p>
         <div className="card-actions">
           <button className={shortlisted ? 'active' : ''} onClick={() => onShortlist(row.product.id)}><Heart size={16} fill={shortlisted ? 'currentColor' : 'none'}/>{shortlisted ? 'Saved' : 'Shortlist'}</button>
           <button className={compared ? 'active' : ''} onClick={() => onCompare(row.product.id)} disabled={!compared && state.compared.length >= 4}><BadgeCheck size={16}/>{compared ? 'Selected' : 'Compare'}</button>
@@ -285,61 +367,62 @@ function DecisionCard({ row, config, state, onCalculate, onShortlist, onCompare,
   );
 }
 
+function plotTickStep(metric: MetricId, value: number) {
+  if (['purchase_price', 'ownership_cost', 'energy_cost', 'water_cost', 'annual_running_cost'].includes(metric)) return Math.max(25, Math.round(Math.abs(value) * .04 / 5) * 5);
+  if (metric === 'running_cost_per_cycle') return .005;
+  if (metric === 'narrowest_clearance_cm') return .5;
+  if (metric === 'annual_energy_kwh') return 10;
+  if (metric === 'annual_water_litres') return 500;
+  return 1;
+}
+
+function plotDomain(values: number[], metric: MetricId, tickCount: number): [number, number] {
+  const min = Math.min(...values), max = Math.max(...values);
+  if (min !== max) return [min, max];
+  const padding = plotTickStep(metric, min) * (tickCount - 1) / 2;
+  return [min - padding, max + padding];
+}
+
 function TradeoffPlot({ rows, config, state, onSelect, onCompare }: { rows: Evaluation[]; config: DecisionConfig; state: AppState; onSelect: (id: string) => void; onCompare: (id: string) => void }) {
   const xId = config.plot.xMetricId, yId = config.plot.yMetricId;
   const xs = rows.map((r) => r.metrics[xId]), ys = rows.map((r) => r.metrics[yId]);
-  const xMin = Math.min(...xs), xMax = Math.max(...xs), yMin = Math.min(...ys), yMax = Math.max(...ys);
-  const xScale = (v: number) => 72 + ((v - xMin) / Math.max(xMax - xMin, 1)) * 680;
-  const yScale = (v: number) => 316 - ((v - yMin) / Math.max(yMax - yMin, 1)) * 260;
+  const [xMin, xMax] = plotDomain(xs, xId, 5), [yMin, yMax] = plotDomain(ys, yId, 3);
+  const xScale = (v: number) => 72 + ((v - xMin) / (xMax - xMin)) * 680;
+  const yScale = (v: number) => 316 - ((v - yMin) / (yMax - yMin)) * 260;
   const strong = rows.filter((r) => r.strongTradeoff).sort((a, b) => a.metrics[xId] - b.metrics[xId]);
   return (
     <div className="plot-panel">
       <div className="plot-heading"><div><p className="eyebrow blue">Strong tradeoffs</p><h3>{metricMeta[xId].label} against {metricMeta[yId].label.toLowerCase()}</h3></div><p>No other visible machine is better on both current axes.</p></div>
       <svg className="tradeoff-svg" viewBox="0 0 820 380" aria-labelledby="tradeoff-plot-title">
-        <title id="tradeoff-plot-title">{metricMeta[xId].label} against {metricMeta[yId].label} for {rows.length} machines</title>
+        <title id="tradeoff-plot-title">{metricMeta[xId].label} against {metricMeta[yId].label} for {rows.length} {plural(rows.length, 'machine')}</title>
         <line x1="72" y1="326" x2="770" y2="326" className="axis"/><line x1="62" y1="48" x2="62" y2="326" className="axis"/>
         {[0, .25, .5, .75, 1].map((tick) => <g key={`x${tick}`}><line x1={72 + tick * 680} y1="326" x2={72 + tick * 680} y2="332" className="axis"/><text x={72 + tick * 680} y="350" textAnchor="middle">{metricValue(xId, xMin + tick * (xMax - xMin))}</text></g>)}
         {[0, .5, 1].map((tick) => <g key={`y${tick}`}><line x1="56" y1={316 - tick * 260} x2="62" y2={316 - tick * 260} className="axis"/><text x="50" y={320 - tick * 260} textAnchor="end">{metricValue(yId, yMin + tick * (yMax - yMin))}</text></g>)}
         {strong.length > 1 && <polyline className="frontier" points={strong.map((r) => `${xScale(r.metrics[xId])},${yScale(r.metrics[yId])}`).join(' ')}/>} 
         {rows.map((row) => {
           const saved = state.shortlisted.includes(row.product.id), selected = state.compared.includes(row.product.id);
-          return <a key={row.product.id} href={`#product-${row.product.id}`} className={`plot-point ${row.strongTradeoff ? 'strong' : ''} ${saved ? 'saved' : ''} ${selected ? 'selected' : ''}`} aria-label={`${row.product.brand} ${row.product.model}, ${metricMeta[xId].label} ${metricValue(xId, row.metrics[xId])}, ${metricMeta[yId].label} ${metricValue(yId, row.metrics[yId])}, eight-year cost ${metricValue('ownership_cost', row.metrics.ownership_cost)}`} onClick={(e) => { e.preventDefault(); if (e.shiftKey) onCompare(row.product.id); else onSelect(row.product.id); }} onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); onSelect(row.product.id); } }}><title>{row.product.brand} {row.product.model} · {metricValue(xId, row.metrics[xId])} · {metricValue(yId, row.metrics[yId])}</title><circle cx={xScale(row.metrics[xId])} cy={yScale(row.metrics[yId])} r={config.plot.sizeMetricId ? 7 + row.metrics[config.plot.sizeMetricId] / 2 : 10}/>{(saved || row.strongTradeoff) && <text x={xScale(row.metrics[xId])} y={yScale(row.metrics[yId]) - 16} textAnchor="middle">{row.product.model}</text>}</a>;
+          return <a key={row.product.id} href={`#product-${row.product.id}`} className={`plot-point ${row.strongTradeoff ? 'strong' : ''} ${saved ? 'saved' : ''} ${selected ? 'selected' : ''}`} aria-label={`${row.product.brand} ${row.product.model}, ${metricMeta[xId].label} ${metricValue(xId, row.metrics[xId])}, ${metricMeta[yId].label} ${metricValue(yId, row.metrics[yId])}, ${config.assumptions.ownership_years}-year cost ${metricValue('ownership_cost', row.metrics.ownership_cost)}`} onClick={(e) => { e.preventDefault(); if (e.shiftKey) onCompare(row.product.id); else onSelect(row.product.id); }} onKeyDown={(e) => { if (e.key === ' ') { e.preventDefault(); onSelect(row.product.id); } }}><title>{row.product.brand} {row.product.model} · {metricValue(xId, row.metrics[xId])} · {metricValue(yId, row.metrics[yId])}</title><circle cx={xScale(row.metrics[xId])} cy={yScale(row.metrics[yId])} r={config.plot.sizeMetricId ? 7 + row.metrics[config.plot.sizeMetricId] / 2 : 10}/>{(saved || row.strongTradeoff) && <text x={xScale(row.metrics[xId])} y={yScale(row.metrics[yId]) - 16} textAnchor="middle">{row.product.model}</text>}</a>;
         })}
         <text className="axis-title" x="420" y="376" textAnchor="middle">{metricMeta[xId].label} · {metricMeta[xId].unit} · {metricMeta[xId].direction === 'asc' ? 'lower is better' : 'higher is better'}</text>
         <text className="axis-title" transform="translate(15 190) rotate(-90)" textAnchor="middle">{metricMeta[yId].label} · {metricMeta[yId].unit} · {metricMeta[yId].direction === 'asc' ? 'lower is better' : 'higher is better'}</text>
       </svg>
-      <details className="accessible-data"><summary>View this map as a table</summary><div className="table-scroll"><table><thead><tr><th>Machine</th><th>{metricMeta[xId].label}</th><th>{metricMeta[yId].label}</th><th>8-year cost</th><th>Action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.product.id}><th>{row.product.brand} {row.product.model}{row.strongTradeoff ? ' · Strong tradeoff' : ''}</th><td>{metricValue(xId, row.metrics[xId])}</td><td>{metricValue(yId, row.metrics[yId])}</td><td>{metricValue('ownership_cost', row.metrics.ownership_cost)}</td><td><button onClick={() => onCompare(row.product.id)}>Add to comparison</button></td></tr>)}</tbody></table></div></details>
+      <details className="accessible-data"><summary>View this map as a table</summary><div className="table-scroll"><table><thead><tr><th>Machine</th><th>{metricMeta[xId].label}</th><th>{metricMeta[yId].label}</th><th>{config.assumptions.ownership_years}-year cost</th><th>Action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.product.id}><th>{row.product.brand} {row.product.model}{row.strongTradeoff ? ' · Strong tradeoff' : ''}</th><td>{metricValue(xId, row.metrics[xId])}</td><td>{metricValue(yId, row.metrics[yId])}</td><td>{metricValue('ownership_cost', row.metrics.ownership_cost)}</td><td><button onClick={() => onCompare(row.product.id)}>Add to comparison</button></td></tr>)}</tbody></table></div></details>
     </div>
   );
 }
 
 function Comparison({ state, rows, onRemove, onClose }: { state: AppState; rows: Evaluation[]; onRemove: (id: string) => void; onClose: () => void }) {
-  const [showAll, setShowAll] = useState(false);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const compared = state.compared.map((id) => rows.find((row) => row.product.id === id)).filter(Boolean) as Evaluation[];
+  const comparisonKey = `${state.revision}::${state.compared.join('|')}::${state.selectedComparisonRowIds?.join('|') ?? 'default'}`;
+  const showAll = expandedKey === comparisonKey;
   if (compared.length < 2) return null;
-  const data = [
-    ['Eligible now', (r: Evaluation) => r.eligible ? 'Yes' : r.reasons.join(', ')],
-    ['Estimated ownership cost', (r: Evaluation) => metricValue('ownership_cost', r.metrics.ownership_cost)],
-    ['Annual running cost', (r: Evaluation) => metricValue('annual_running_cost', r.metrics.annual_running_cost)],
-    ['Running cost per wash', (r: Evaluation) => metricValue('running_cost_per_cycle', r.metrics.running_cost_per_cycle)],
-    ['Physical clearance', (r: Evaluation) => `${r.clearances.width.toFixed(1)} / ${r.clearances.depth.toFixed(1)} / ${r.clearances.height.toFixed(1)} cm W/D/H`],
-    ['Delivery slack', (r: Evaluation) => metricValue('delivery_slack_days', r.metrics.delivery_slack_days)],
-    ['Capacity', (r: Evaluation) => `${r.product.capacityKg} kg`],
-    ['Energy / 100 cycles', (r: Evaluation) => `${r.product.energyKwhPer100} kWh`],
-    ['Water / cycle', (r: Evaluation) => `${r.product.waterLitresPerCycle} L`],
-    ['Spin noise', (r: Evaluation) => `${r.product.noiseDb} dB · ${r.product.noiseClass}`],
-    ['Spin speed', (r: Evaluation) => `${r.product.spinSpeed} rpm`],
-    ['Eco cycle', (r: Evaluation) => `${Math.floor(r.product.cycleMinutes / 60)}h ${r.product.cycleMinutes % 60}m`],
-    ['Machine type', (r: Evaluation) => r.product.type],
-    ['Installed size', (r: Evaluation) => `${r.product.widthCm} × ${r.product.installedDepthCm} × ${r.product.heightCm} cm`],
-    ['Warranty', (r: Evaluation) => `${r.product.warrantyYears} years`],
-  ] as const;
-  const visible = data.filter(([, getter], index) => showAll || index < 6 || new Set(compared.map(getter)).size > 1);
+  const visible = renderedComparisonRows(compared, state.selectedComparisonRowIds ?? null, showAll);
   return (
     <section className="comparison-section" aria-labelledby="comparison-title">
       <div className="comparison-title"><div><p className="eyebrow blue">Side by side</p><h2 id="comparison-title">Your comparison</h2></div><button onClick={onClose} aria-label="Close comparison"><X size={20}/></button></div>
-      <div className="comparison-scroll"><table><thead><tr><th>What matters</th>{compared.map((row) => <th key={row.product.id}><button className="remove-compare" onClick={() => onRemove(row.product.id)} aria-label={`Remove ${row.product.model}`}><X size={14}/></button><span>{row.product.brand}</span><strong>{row.product.model}</strong><em>£{row.product.price} · {metricValue('ownership_cost', row.metrics.ownership_cost)}</em></th>)}</tr></thead><tbody>{visible.map(([label, getter]) => <tr key={label}><th>{label}</th>{compared.map((row) => <td key={row.product.id} className={!row.eligible && label === 'Eligible now' ? 'comparison-fail' : ''}>{getter(row)}</td>)}</tr>)}</tbody></table></div>
-      <button className="show-all" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show meaningful differences' : 'Show all specifications'}</button>
+      <div className="comparison-scroll"><table><thead><tr><th>What matters</th>{compared.map((row) => <th key={row.product.id}><button className="remove-compare" onClick={() => onRemove(row.product.id)} aria-label={`Remove ${row.product.model}`}><X size={14}/></button><span>{row.product.brand}</span><strong>{row.product.model}</strong><em>£{row.product.price} · {metricValue('ownership_cost', row.metrics.ownership_cost)}</em></th>)}</tr></thead><tbody>{visible.map((definition) => <tr key={definition.id} data-comparison-row={definition.id}><th>{definition.label}</th>{compared.map((row) => <td key={row.product.id} className={!row.eligible && definition.id === 'eligible' ? 'comparison-fail' : ''}>{definition.value(row)}</td>)}</tr>)}</tbody></table></div>
+      {!state.selectedComparisonRowIds && <button className="show-all" onClick={() => setExpandedKey(showAll ? null : comparisonKey)}>{showAll ? 'Show meaningful differences' : 'Show all specifications'}</button>}
     </section>
   );
 }
@@ -351,9 +434,11 @@ function CalculationSheet({ state, rows, onOpenChange }: { state: AppState; rows
   const metric = state.calculation.metricId;
   return (
     <Sheet open onOpenChange={onOpenChange}><SheetContent className="calculation-sheet"><SheetHeader><p className="eyebrow blue">{target.product.brand} {target.product.model}</p><SheetTitle className="sheet-title">How this was calculated</SheetTitle><SheetDescription>Every figure uses the retailer&apos;s product data and your current assumptions.</SheetDescription></SheetHeader>
-      <div className="calc-result"><span>Estimated {metricMeta[metric].label.toLowerCase()}</span><strong>{metricValue(metric, explanation.result, true)}</strong></div>
-      {metric === 'ownership_cost' ? <div className="equation-rows"><div><span>Purchase price</span><strong>£{explanation.purchasePrice.toFixed(2)}</strong></div><div><span>Electricity over {state.decision!.assumptions.ownership_years} years</span><strong>£{explanation.electricityCost.toFixed(2)}</strong></div><div><span>Water over {state.decision!.assumptions.ownership_years} years</span><strong>£{explanation.waterCost.toFixed(2)}</strong></div><div className="total"><span>Estimated total</span><strong>{metricValue(metric, explanation.result, true)}</strong></div></div> : <div className="equation-rows"><div><span>Current result</span><strong>{metricValue(metric, explanation.result, true)}</strong></div><div><span>Usage</span><strong>{state.decision!.assumptions.cycles_per_week} washes/week</strong></div><div><span>Eco 40–60 energy</span><strong>{target.product.energyKwhPer100} kWh/100 cycles</strong></div><div><span>Eco 40–60 water</span><strong>{target.product.waterLitresPerCycle} L/cycle</strong></div></div>}
-      <div className="calc-note"><Info size={17}/><p>{explanation.estimateBasis} {explanation.exclusions}</p></div>
+      <div className="calc-result"><span>Estimated {metricMeta[metric].label.toLowerCase()}</span><strong>{explanation.formattedResult}</strong></div>
+      <section className="calc-section"><h3>Shopper inputs</h3><dl>{explanation.shopperInputs.map((item) => <div key={item.id}><dt>{item.label}</dt><dd>{item.display}</dd></div>)}</dl></section>
+      <section className="calc-section"><h3>Product facts</h3><dl>{explanation.productFacts.map((item) => <div key={item.id}><dt>{item.label}</dt><dd>{item.display}</dd></div>)}</dl></section>
+      <section className="calc-section"><h3>Calculation</h3><div className="equation-rows">{explanation.steps.map((item) => <div key={item.id} data-calculation-step={item.id}><span>{item.label}</span><strong>{item.expression}</strong></div>)}</div></section>
+      <div className="calc-note"><Info size={17}/><div><strong>Estimate basis</strong><p>{explanation.estimateBasis}</p><strong>Not included</strong><p>{explanation.exclusions.join(' · ')}</p></div></div>
     </SheetContent></Sheet>
   );
 }
@@ -366,18 +451,25 @@ function DecisionPage({ state, commit, replaceTransient, onView, announce, onUnd
   const deliveryOnly = result.excluded.filter((r) => r.reasonIds.length === 1 && r.reasonIds[0] === 'delivery_within_days').length;
   const multiple = result.excluded.filter((r) => r.reasonIds.length > 1).length;
   const setAssumption = (id: NumericAssumptionId, value: number) => {
-    const next = commit((s) => ({ ...s, decision: { ...s.decision!, assumptions: { ...s.decision!.assumptions, [id]: value } } }));
+    const next = commit((s) => ({ ...s, decision: setDecisionAssumption(s.decision!, id, value) }));
     const count = evaluateCatalog(next.decision!, next.hidden).ranked.length;
-    announce(`${assumptionMeta[id].label} updated. ${count} machines now meet every requirement.`);
+    announce(`${assumptionMeta[id].label} updated. ${count} ${plural(count, 'machine')} now ${count === 1 ? 'meets' : 'meet'} every requirement.`);
   };
   const setMachineType = (value: 'freestanding' | 'integrated') => {
-    const next = commit((s) => ({ ...s, decision: { ...s.decision!, assumptions: { ...s.decision!.assumptions, machine_type: value } } }));
-    announce(`Machine type updated. ${evaluateCatalog(next.decision!, next.hidden).ranked.length} machines now meet every requirement.`);
+    const next = commit((s) => ({ ...s, decision: setDecisionAssumption(s.decision!, 'machine_type', value) }));
+    const count = evaluateCatalog(next.decision!, next.hidden).ranked.length;
+    announce(`Machine type updated. ${count} ${plural(count, 'machine')} now ${count === 1 ? 'meets' : 'meet'} every requirement.`);
   };
   const toggleLock = (id: AssumptionId) => commit((s) => ({ ...s, lockedIds: s.lockedIds.includes(id) ? s.lockedIds.filter((item) => item !== id) : [...s.lockedIds, id] }));
   const toggleShortlist = (id: string) => commit((s) => ({ ...s, shortlisted: s.shortlisted.includes(id) ? s.shortlisted.filter((item) => item !== id) : [...s.shortlisted, id] }));
-  const toggleCompare = (id: string) => commit((s) => ({ ...s, compared: s.compared.includes(id) ? s.compared.filter((item) => item !== id) : s.compared.length < 4 ? [...s.compared, id] : s.compared }));
-  const hide = (id: string) => commit((s) => ({ ...s, hidden: [...new Set([...s.hidden, id])], compared: s.compared.filter((item) => item !== id) }));
+  const toggleCompare = (id: string) => commit((s) => {
+    const compared = s.compared.includes(id) ? s.compared.filter((item) => item !== id) : s.compared.length < 4 ? [...s.compared, id] : s.compared;
+    return { ...s, compared, selectedComparisonRowIds: compared.length < 2 ? null : s.selectedComparisonRowIds };
+  });
+  const hide = (id: string) => commit((s) => {
+    const compared = s.compared.filter((item) => item !== id);
+    return { ...s, hidden: [...new Set([...s.hidden, id])], compared, selectedComparisonRowIds: compared.length ? s.selectedComparisonRowIds : null };
+  });
   const openCalculation = (productId: string, metricId: DerivedMetricId) => replaceTransient((s) => ({ ...s, calculation: { productId, metricId } }));
   const selectFromPlot = (id: string) => {
     commit((s) => ({ ...s, viewMode: 'cards' }));
@@ -386,9 +478,9 @@ function DecisionPage({ state, commit, replaceTransient, onView, announce, onUnd
   const shortlistedExcluded = result.all.filter((r) => !r.eligible && state.shortlisted.includes(r.product.id));
   const chips = [
     `Space ${config.assumptions.opening_width_cm} × ${config.assumptions.opening_depth_cm} × ${config.assumptions.opening_height_cm} cm`,
-    `${config.assumptions.cycles_per_week} washes each week`, `Keep for ${config.assumptions.ownership_years} years`,
+    `${config.assumptions.cycles_per_week} ${plural(config.assumptions.cycles_per_week ?? 0, 'wash', 'washes')} each week`, `Keep for ${config.assumptions.ownership_years} ${plural(config.assumptions.ownership_years ?? 0, 'year')}`,
     `Electricity ${config.assumptions.electricity_price_pence_per_kwh}p/kWh`, `Water ${config.assumptions.water_price_pence_per_litre}p/litre`,
-    `Arrives within ${config.assumptions.delivery_within_days} days`,
+    `Arrives within ${config.assumptions.delivery_within_days} ${plural(config.assumptions.delivery_within_days ?? 0, 'day')}`,
     ...(config.assumptions.minimum_capacity_kg != null ? [`At least ${config.assumptions.minimum_capacity_kg} kg`] : []),
     ...(config.assumptions.maximum_purchase_price != null ? [`Up to £${config.assumptions.maximum_purchase_price}`] : []),
     ...(config.assumptions.machine_type ? [`${config.assumptions.machine_type[0].toUpperCase()}${config.assumptions.machine_type.slice(1)}`] : []),
@@ -402,21 +494,21 @@ function DecisionPage({ state, commit, replaceTransient, onView, announce, onUnd
         <div className="assumption-grid">{(['opening_depth_cm','cycles_per_week','electricity_price_pence_per_kwh','delivery_within_days'] as NumericAssumptionId[]).map((id) => <AssumptionControl key={id} id={id} config={config} locked={state.lockedIds.includes(id)} onChange={setAssumption} onToggleLock={toggleLock}/>)}</div>
         {allAssumptions && <div className="assumption-grid all-grid">
           {(['opening_width_cm','opening_height_cm','ownership_years','water_price_pence_per_litre', ...(config.assumptions.minimum_capacity_kg != null ? ['minimum_capacity_kg'] : []), ...(config.assumptions.maximum_purchase_price != null ? ['maximum_purchase_price'] : [])] as NumericAssumptionId[]).map((id) => <AssumptionControl key={id} id={id} config={config} locked={state.lockedIds.includes(id)} onChange={setAssumption} onToggleLock={toggleLock}/>)}
-          {config.assumptions.machine_type && <label className={`assumption-control ${state.lockedIds.includes('machine_type') ? 'is-locked' : ''}`} data-assumption="machine_type"><span>Machine type<button type="button" onClick={() => toggleLock('machine_type')} aria-label={`${state.lockedIds.includes('machine_type') ? 'Unlock' : 'Lock'} machine type`}>{state.lockedIds.includes('machine_type') ? <Lock size={14}/> : <LockOpen size={14}/>}</button></span><select value={config.assumptions.machine_type} onChange={(e) => setMachineType(e.target.value as 'freestanding' | 'integrated')}><option value="freestanding">Freestanding</option><option value="integrated">Integrated</option></select></label>}
+          {config.assumptions.machine_type && <div className={`assumption-control ${state.lockedIds.includes('machine_type') ? 'is-locked' : ''}`} data-assumption="machine_type"><div className="assumption-label"><label htmlFor="assumption-machine_type">Machine type</label><button type="button" onClick={() => toggleLock('machine_type')} aria-label={`${state.lockedIds.includes('machine_type') ? 'Unlock' : 'Lock'} machine type`}>{state.lockedIds.includes('machine_type') ? <Lock size={14}/> : <LockOpen size={14}/>}</button></div><select id="assumption-machine_type" value={config.assumptions.machine_type} onChange={(e) => setMachineType(e.target.value as 'freestanding' | 'integrated')}><option value="freestanding">Freestanding</option><option value="integrated">Integrated</option></select></div>}
         </div>}
       </section>
-      <div className="sticky-summary"><strong>{result.ranked.length} matching machines</strong><span>{config.tradeoff ? `${metricMeta[config.tradeoff.firstMetricId].label} ↔ ${metricMeta[config.tradeoff.secondMetricId].label}` : metricMeta[config.primarySort.metricId].label}</span><a href="#assumption-heading">Edit assumptions</a></div>
-      <section className="eligibility-summary"><div><span className="result-number">{result.ranked.length}</span><p><strong>of {catalog.length} machines meet every requirement.</strong><br/>{fitOnly} fail fit alone, {deliveryOnly} arrive too late, and {multiple} fail more than one requirement.</p></div><button onClick={() => commit((s) => ({ ...s, showExcluded: !s.showExcluded }))}>{state.showExcluded ? 'Hide excluded machines' : `Inspect ${result.excluded.length} exclusions`}</button></section>
+      <div className="sticky-summary"><strong>{result.ranked.length} matching {plural(result.ranked.length, 'machine')}</strong><span>{config.tradeoff ? `${metricMeta[config.tradeoff.firstMetricId].label} ↔ ${metricMeta[config.tradeoff.secondMetricId].label}` : metricMeta[config.primarySort.metricId].label}</span><a href="#assumption-heading">Edit assumptions</a></div>
+      <section className="eligibility-summary"><div><span className="result-number">{result.ranked.length}</span><p><strong>of {catalog.length} machines {result.ranked.length === 1 ? 'meets' : 'meet'} every requirement.</strong><br/>{fitOnly} {plural(fitOnly, 'machine')} {fitOnly === 1 ? 'fails' : 'fail'} fit alone, {deliveryOnly} {plural(deliveryOnly, 'machine')} {deliveryOnly === 1 ? 'arrives' : 'arrive'} too late, and {multiple} {plural(multiple, 'machine')} {multiple === 1 ? 'fails' : 'fail'} more than one requirement.</p></div><button onClick={() => commit((s) => ({ ...s, showExcluded: !s.showExcluded }))}>{state.showExcluded ? 'Hide excluded machines' : `Inspect ${result.excluded.length} ${plural(result.excluded.length, 'exclusion')}`}</button></section>
       {state.showExcluded && <section className="excluded-panel"><div className="section-heading"><div><p className="eyebrow">Exact reasons</p><h2>Excluded machines</h2></div></div><div className="excluded-grid">{result.excluded.map((row) => <button key={row.product.id} onClick={() => onView(row.product)}><span>{row.product.brand} {row.product.model}</span><strong>{row.reasons.join(' · ')}</strong></button>)}</div></section>}
       {config.tradeoff && <section className="tradeoff-control"><div><p className="eyebrow blue">Prioritise</p><h2>Set your balance</h2><p>This changes the order, never the underlying product facts.</p></div><div className="slider-wrap"><div><strong>Lower upfront price</strong><strong>Quieter spin</strong></div><Slider min={0} max={100} step={1} value={[Math.round(config.tradeoff.secondMetricWeight * 100)]} onValueChange={(values) => { const n = Array.isArray(values) ? values[0] : Number(values); commit((s) => ({ ...s, decision: { ...s.decision!, tradeoff: { ...s.decision!.tradeoff!, secondMetricWeight: n / 100 } } })); announce('Product order updated for your new price and noise balance.'); }} aria-label="Balance lower upfront price against quieter spin"/><p>{Math.round((1 - config.tradeoff.secondMetricWeight) * 100)}% price · {Math.round(config.tradeoff.secondMetricWeight * 100)}% quietness</p></div></section>}
-      <section className="results-section"><div className="results-header"><div><p className="eyebrow">Your results</p><h2>{result.ranked.length ? 'Machines in your current order' : 'No machine meets every requirement'}</h2></div><div className="view-tabs" role="tablist" aria-label="Results view">{(['cards','table','plot'] as const).map((mode) => <button key={mode} role="tab" aria-selected={state.viewMode === mode} onClick={() => commit((s) => ({ ...s, viewMode: mode }))}>{mode === 'plot' ? 'Tradeoff map' : mode[0].toUpperCase() + mode.slice(1)}</button>)}</div></div>
-        {!result.ranked.length ? <NoMatches config={config} onApply={(id, value) => setAssumption(id, value)}/> : state.viewMode === 'plot' ? <TradeoffPlot rows={result.ranked} config={config} state={state} onSelect={selectFromPlot} onCompare={toggleCompare}/> : state.viewMode === 'table' ? <DecisionTable rows={result.ranked} config={config} onCalculate={openCalculation} onCompare={toggleCompare}/> : <div className="decision-grid">{result.ranked.map((row) => <DecisionCard key={row.product.id} row={row} config={config} state={state} onCalculate={openCalculation} onShortlist={toggleShortlist} onCompare={toggleCompare} onHide={hide} onView={onView}/>)}</div>}
+      <section className="results-section"><div className="results-header"><div><p className="eyebrow">Your results</p><h2>{result.ranked.length ? `${plural(result.ranked.length, 'Machine')} in your current order` : 'No machine meets every requirement'}</h2></div><div className="view-tabs" role="tablist" aria-label="Results view">{(['cards','table','plot'] as const).map((mode) => <button key={mode} role="tab" aria-selected={state.viewMode === mode} onClick={() => commit((s) => ({ ...s, viewMode: mode }))}>{mode === 'plot' ? 'Tradeoff map' : mode[0].toUpperCase() + mode.slice(1)}</button>)}</div></div>
+        {!result.ranked.length ? <NoMatches config={config} hiddenIds={state.hidden} onApply={(id, value) => setAssumption(id, value)}/> : state.viewMode === 'plot' ? <TradeoffPlot rows={result.ranked} config={config} state={state} onSelect={selectFromPlot} onCompare={toggleCompare}/> : state.viewMode === 'table' ? <DecisionTable rows={result.ranked} config={config} onCalculate={openCalculation} onCompare={toggleCompare}/> : <div className="decision-grid">{result.ranked.map((row) => <DecisionCard key={row.product.id} row={row} config={config} state={state} onCalculate={openCalculation} onShortlist={toggleShortlist} onCompare={toggleCompare} onHide={hide} onView={onView}/>)}</div>}
       </section>
       {state.hidden.length > 0 && <div className="restore-bar"><EyeOff size={17}/><span>{state.hidden.length} hidden machine{state.hidden.length === 1 ? '' : 's'}</span><button onClick={() => commit((s) => ({ ...s, hidden: [] }))}>Restore all</button></div>}
       {shortlistedExcluded.length > 0 && <section className="shortlist-warning"><h2>Saved, but no longer eligible</h2>{shortlistedExcluded.map((r) => <p key={r.product.id}><strong>{r.product.brand} {r.product.model}</strong> · {r.reasons.join(', ')}</p>)}</section>}
-      <Comparison state={state} rows={result.all} onRemove={toggleCompare} onClose={() => commit((s) => ({ ...s, compared: [] }))}/>
+      <Comparison state={state} rows={result.all} onRemove={toggleCompare} onClose={() => commit((s) => ({ ...s, compared: [], selectedComparisonRowIds: null }))}/>
       <CalculationSheet state={state} rows={result.all} onOpenChange={(open) => !open && replaceTransient((s) => ({ ...s, calculation: null }))}/>
-      {state.compared.length > 0 && state.compared.length < 2 && <div className="compare-bottom"><span>Select one more machine to compare</span><button onClick={() => commit((s) => ({ ...s, compared: [] }))}>Clear</button></div>}
+      {state.compared.length > 0 && state.compared.length < 2 && <div className="compare-bottom"><span>Select one more machine to compare</span><button onClick={() => commit((s) => ({ ...s, compared: [], selectedComparisonRowIds: null }))}>Clear</button></div>}
       <footer className="decision-footer"><p>Costs are estimates based on Eco 40–60 specifications and your inputs.</p><button onClick={() => commit((s) => ({ ...s, decision: null, calculation: null, showExcluded: false }))}><RotateCcw size={15}/>Return to standard results</button></footer>
     </main>
   );
@@ -426,9 +518,16 @@ function DecisionTable({ rows, config, onCalculate, onCompare }: { rows: Evaluat
   return <div className="decision-table table-scroll"><table><thead><tr><th>Machine</th><th>Price</th>{config.visibleMetricIds.map((id) => <th key={id}>{metricMeta[id].label}</th>)}<th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => <tr key={row.product.id}><th><span>#{row.rank}</span>{row.product.brand} {row.product.model}</th><td>£{row.product.price}</td>{config.visibleMetricIds.map((id) => <td key={id}>{!['purchase_price','spin_noise_db','capacity_kg'].includes(id) ? <button onClick={() => onCalculate(row.product.id, id as DerivedMetricId)}>{metricValue(id, row.metrics[id])}</button> : metricValue(id, row.metrics[id])}</td>)}<td><button onClick={() => onCompare(row.product.id)}>Compare</button></td></tr>)}</tbody></table></div>;
 }
 
-function NoMatches({ config, onApply }: { config: DecisionConfig; onApply: (id: NumericAssumptionId, value: number) => void }) {
-  const suggestions = findNearestRelaxations(config);
-  return <div className="no-matches"><div><p className="eyebrow">Nothing hidden</p><h3>No machine meets every requirement.</h3><p>These are the smallest single changes that would create real choices.</p></div><div>{suggestions.map((s) => <button key={s.id} onClick={() => onApply(s.id, s.value)}><strong>{s.id === 'delivery_within_days' ? `Allow ${s.delta.toFixed(0)} more delivery days` : `Increase ${s.label.toLowerCase()} by ${s.delta.toFixed(1)} ${assumptionMeta[s.id].displayUnit}`}</strong><span>Include {s.admitted} model{s.admitted === 1 ? '' : 's'}</span></button>)}</div></div>;
+function NoMatches({ config, hiddenIds, onApply }: { config: DecisionConfig; hiddenIds: string[]; onApply: (id: NumericAssumptionId, value: number) => void }) {
+  const suggestions = findNearestRelaxations(config, hiddenIds);
+  const amount = (value: number) => value.toLocaleString('en-GB', { maximumFractionDigits: 1 });
+  const copy = (id: NumericAssumptionId, value: number, delta: number) => {
+    if (id === 'delivery_within_days') return `Allow ${amount(delta)} more delivery ${plural(delta, 'day')}`;
+    if (id === 'minimum_capacity_kg') return `Lower minimum capacity to ${amount(value)} kg`;
+    if (id === 'maximum_purchase_price') return `Raise maximum price to £${amount(value)}`;
+    return `Increase ${assumptionMeta[id].label.toLowerCase()} to ${amount(value)} cm`;
+  };
+  return <div className={`no-matches ${suggestions.length ? '' : 'no-suggestions'}`}><div><p className="eyebrow">Closest alternatives</p><h3>No machine meets every requirement.</h3><p>{suggestions.length ? 'These are the smallest single changes that would create real choices.' : 'No single eligible input change is enough to produce a visible match.'}</p></div>{suggestions.length > 0 && <div>{suggestions.map((suggestion) => <button key={suggestion.id} onClick={() => onApply(suggestion.id, suggestion.value)}><strong>{copy(suggestion.id, suggestion.value, suggestion.delta)}</strong><span>Show {suggestion.admitted} matching {plural(suggestion.admitted, 'machine')}</span></button>)}</div>}</div>;
 }
 
 function DebugHarness({ handlers, state }: { handlers: WebMcpHandlers; state: AppState }) {
@@ -450,7 +549,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) { const parsed = JSON.parse(stored) as AppState; stateRef.current = { ...blankState, ...parsed }; setState(stateRef.current); }
+      if (stored) { const parsed = JSON.parse(stored) as AppState; stateRef.current = migrateState(parsed); setState(stateRef.current); }
     } catch { localStorage.removeItem(STORAGE_KEY); }
     setHydrated(true);
   }, []);
@@ -486,7 +585,28 @@ export default function Home() {
       abortIfNeeded(signal);
       const current = stateRef.current;
       const evaluated = current.decision ? evaluateCatalog(current.decision, current.hidden) : null;
-      return jsonSafe({ ok: true, category: 'washing_machines', currency: 'GBP', assumptions: Object.entries(assumptionMeta).map(([id, m]) => ({ id, storage_unit: m.storageUnit, display_unit: m.displayUnit, bounds: { minimum: m.min, maximum: m.max }, description: m.description, example: m.example })), requirements: requirementIds, metrics: Object.entries(metricMeta).map(([id, m]) => ({ id, unit: m.unit, better_direction: m.direction, required_assumption_ids: m.requires })), comparison_row_ids: comparisonRowIds, standard_filters: current.decision ? null : { price: true, brand: true, machine_type: true, capacity: true }, decision_view: current.decision, current_revision: current.revision, eligible_count: evaluated?.ranked.length ?? catalog.length, products: compactRows(current), locked_assumption_ids: current.lockedIds, shortlisted_product_ids: current.shortlisted, hidden_product_ids: current.hidden, compared_product_ids: current.compared, exclusion_counts: evaluated?.exclusions ?? {} });
+      const assumptions = Object.entries(assumptionMeta).map(([id, meta]) => id === 'machine_type'
+        ? { id, storage_unit: meta.storageUnit, display_unit: meta.displayUnit, valid_values: meta.validValues, description: meta.description, example: meta.example }
+        : { id, storage_unit: meta.storageUnit, display_unit: meta.displayUnit, bounds: { minimum: meta.min, maximum: meta.max }, description: meta.description, example: meta.example });
+      return jsonSafe({
+        ok: true, category: 'washing_machines', currency: 'GBP', assumptions,
+        requirements: requirementIds,
+        metrics: Object.entries(metricMeta).map(([id, meta]) => ({ id, unit: meta.unit, better_direction: meta.direction, required_assumption_ids: meta.requires })),
+        comparison_row_ids: comparisonRowIds,
+        standard_filters: current.decision ? null : { price: true, brand: true, machine_type: true, capacity: true },
+        decision_view: current.decision,
+        current_revision: current.revision,
+        view_mode: current.viewMode,
+        open_calculation: current.calculation ? { product_id: current.calculation.productId, metric_id: current.calculation.metricId } : null,
+        comparison_row_ids_selected: current.selectedComparisonRowIds,
+        eligible_count: evaluated?.ranked.length ?? catalog.length,
+        products: compactRows(current),
+        locked_assumption_ids: current.lockedIds,
+        shortlisted_product_ids: current.shortlisted,
+        hidden_product_ids: current.hidden,
+        compared_product_ids: current.compared,
+        exclusion_counts: evaluated?.exclusions ?? {},
+      });
     };
 
     const createDecisionView = async (input: Record<string, unknown>, signal?: AbortSignal) => {
@@ -505,7 +625,11 @@ export default function Home() {
       const rawPlot = input.plot as Record<string, unknown> | undefined;
       const config: DecisionConfig = {
         id: current.decision?.id ?? 'personal-washer-comparison', title: stringInput(input.title), assumptions,
-        requirements: ((input.requirements ?? []) as Array<Record<string, unknown>>).map((r) => ({ id: String(r.id) as RequirementId, value: r.value as number | string | undefined })),
+        requirements: ((input.requirements ?? []) as Array<Record<string, unknown>>).map((requirement) => {
+          const id = String(requirement.id) as RequirementId;
+          const lockedValue = current.lockedIds.includes(id as AssumptionId) ? assumptions[id as keyof Assumptions] : undefined;
+          return { id, value: lockedValue != null && requirement.value != null ? lockedValue : requirement.value as number | string | undefined };
+        }),
         visibleMetricIds: (input.visible_metric_ids ?? []) as MetricId[], primarySort: { metricId: stringInput(sort.metric_id) as MetricId, direction: sort.direction === 'desc' ? 'desc' : 'asc' },
         tradeoff: rawTradeoff ? { firstMetricId: String(rawTradeoff.first_metric_id) as MetricId, secondMetricId: String(rawTradeoff.second_metric_id) as MetricId, secondMetricWeight: Number(rawTradeoff.second_metric_weight) } : undefined,
         plot: rawPlot ? { xMetricId: stringInput(rawPlot.x_metric_id) as MetricId, yMetricId: stringInput(rawPlot.y_metric_id) as MetricId, sizeMetricId: rawPlot.size_metric_id ? stringInput(rawPlot.size_metric_id) as MetricId : undefined } : { xMetricId: 'purchase_price', yMetricId: 'spin_noise_db', sizeMetricId: 'capacity_kg' },
@@ -515,7 +639,8 @@ export default function Home() {
       try { abortIfNeeded(signal); } catch (error) { setBuilding(false); throw error; }
       if (stateRef.current.revision !== current.revision) { setBuilding(false); return toolFailure('STALE_VIEW', 'This page changed while the new view was being prepared. The assistant needs to read the current view before changing it.', { current_revision: stateRef.current.revision }); }
       const next = commit((s) => ({ ...s, decision: config, compared: s.compared.every((id) => productById.has(id)) ? s.compared : [], viewMode: config.plot ? 'plot' : 'cards', calculation: null }));
-      setBuilding(false); setToast(true); setTimeout(() => setToast(false), 4200); setLiveMessage(`${evaluateCatalog(config, next.hidden).ranked.length} of ${catalog.length} machines fit every requirement.`);
+      const createdCount = evaluateCatalog(config, next.hidden).ranked.length;
+      setBuilding(false); setToast(true); setTimeout(() => setToast(false), 4200); setLiveMessage(`${createdCount} of ${catalog.length} ${plural(catalog.length, 'machine')} fit every requirement.`);
       history.replaceState({ decision: false }, ''); history.pushState({ decision: true }, '');
       await delayPaint(); document.getElementById('decision-heading')?.focus();
       const evaluated = evaluateCatalog(config, next.hidden);
@@ -527,12 +652,12 @@ export default function Home() {
       if (!current.decision) return toolFailure('MISSING_INPUT', 'Create a decision view before updating it.');
       if (input.base_revision !== current.revision) return toolFailure('STALE_VIEW', 'This page changed since the assistant last read it. It needs to read the current view before changing it.', { current_revision: current.revision });
       if (!Array.isArray(input.operations) || !input.operations.length || input.operations.length > 12) return toolFailure('INVALID_REQUIREMENT', 'Provide between one and twelve supported operations.');
-      const draft = cloneDecision(current.decision); const changed: string[] = [];
+      let draft = cloneDecision(current.decision); const changed: string[] = [];
       if ((input.operations as unknown[]).some((item) => !item || typeof item !== 'object' || Array.isArray(item))) return toolFailure('INVALID_REQUIREMENT', 'Every operation must be a supported operation object.');
       for (const raw of input.operations as Array<Record<string, unknown>>) {
         const operation = stringInput(raw.operation) || stringInput(raw.type);
         if (operation === 'set_title') { draft.title = stringInput(raw.title) || stringInput(raw.value); changed.push('title'); }
-        else if (operation === 'set_assumption') { const id = String(raw.assumption_id) as AssumptionId; if (!assumptionIds.includes(id)) return toolFailure('UNSUPPORTED_ASSUMPTION', `Unsupported assumption “${id}”.`, { valid_ids: assumptionIds }); if (current.lockedIds.includes(id)) return toolFailure('LOCKED_ASSUMPTION', `${assumptionMeta[id].label} is locked by the shopper and cannot be changed.`, { field: id, current_revision: current.revision }); (draft.assumptions as Record<string, unknown>)[id] = raw.value; changed.push(id); }
+        else if (operation === 'set_assumption') { const id = String(raw.assumption_id) as AssumptionId; if (!assumptionIds.includes(id)) return toolFailure('UNSUPPORTED_ASSUMPTION', `Unsupported assumption “${id}”.`, { valid_ids: assumptionIds }); if (current.lockedIds.includes(id)) return toolFailure('LOCKED_ASSUMPTION', `${assumptionMeta[id].label} is locked by the shopper and cannot be changed.`, { field: id, current_revision: current.revision }); draft = setDecisionAssumption(draft, id, raw.value as number | string); changed.push(id); }
         else if (operation === 'remove_assumption') { const id = String(raw.assumption_id) as AssumptionId; if (current.lockedIds.includes(id)) return toolFailure('LOCKED_ASSUMPTION', `${assumptionMeta[id].label} is locked by the shopper and cannot be removed.`, { field: id, current_revision: current.revision }); delete (draft.assumptions as Record<string, unknown>)[id]; changed.push(id); }
         else if (operation === 'add_requirement' || operation === 'update_requirement') { const nested = (raw.requirement ?? raw) as Record<string, unknown>; const id = String(nested.id ?? raw.requirement_id) as RequirementId; if (!requirementIds.includes(id)) return toolFailure('INVALID_REQUIREMENT', `Unsupported requirement “${id}”.`, { valid_ids: requirementIds }); draft.requirements = [...draft.requirements.filter((r) => r.id !== id), { id, value: nested.value as number | string | undefined }]; changed.push(id); }
         else if (operation === 'remove_requirement') { const id = String(raw.requirement_id) as RequirementId; draft.requirements = draft.requirements.filter((r) => r.id !== id); changed.push(id); }
@@ -545,7 +670,7 @@ export default function Home() {
         else return toolFailure('INVALID_REQUIREMENT', `Unsupported operation “${operation}”.`);
       }
       const invalid = validateConfig(draft); if (invalid) return invalid; abortIfNeeded(signal);
-      const next = commit((s) => ({ ...s, decision: draft })); setLiveMessage(`Decision view updated. ${evaluateCatalog(draft, next.hidden).ranked.length} machines meet every requirement.`); await delayPaint(); highlightAgentChanges(changed);
+      const next = commit((s) => ({ ...s, decision: draft })); const updatedCount = evaluateCatalog(draft, next.hidden).ranked.length; setLiveMessage(`Decision view updated. ${updatedCount} ${plural(updatedCount, 'machine')} ${updatedCount === 1 ? 'meets' : 'meet'} every requirement.`); await delayPaint(); highlightAgentChanges(changed);
       const evaluated = evaluateCatalog(draft, next.hidden);
       return jsonSafe({ ok: true, revision: next.revision, changed_controls: changed, eligible_count: evaluated.ranked.length, exclusion_counts: evaluated.exclusions, products: compactRows(next), strong_tradeoff_product_ids: evaluated.strong });
     };
@@ -558,10 +683,14 @@ export default function Home() {
       if (!Array.isArray(ids) || ids.length < 2 || ids.length > 4 || new Set(ids).size !== ids.length) return toolFailure('INVALID_COMPARISON', 'Choose two to four unique product IDs.');
       const unknown = ids.find((id) => !productById.has(id)); if (unknown) return toolFailure('UNKNOWN_PRODUCT', `Unknown product “${unknown}”.`, { valid_ids: catalog.map((p) => p.id) });
       const hidden = ids.find((id) => current.hidden.includes(id)); if (hidden) return toolFailure('HIDDEN_PRODUCT', `${hidden} was hidden by the shopper. Only the shopper can restore it.`, { product_id: hidden });
-      if (input.row_ids && (!Array.isArray(input.row_ids) || (input.row_ids as string[]).some((id) => !comparisonRowIds.includes(id)))) return toolFailure('INVALID_COMPARISON', 'One or more comparison rows are unsupported.', { valid_ids: comparisonRowIds });
-      abortIfNeeded(signal); const next = commit((s) => ({ ...s, compared: ids })); await delayPaint();
-      const all = evaluateCatalog(next.decision!, next.hidden).all.filter((r) => ids.includes(r.product.id));
-      return jsonSafe({ ok: true, revision: next.revision, compared_product_ids: ids, differing_rows: comparisonRowIds.filter((rowId) => rowId !== 'machine_type' || new Set(all.map((r) => r.product.type)).size > 1) });
+      const suppliedRows = input.row_ids !== undefined;
+      if (suppliedRows && (!Array.isArray(input.row_ids) || input.row_ids.length < 1 || input.row_ids.length > comparisonRowIds.length || new Set(input.row_ids).size !== input.row_ids.length || (input.row_ids as string[]).some((id) => !comparisonRowIds.includes(id as ComparisonRowId)))) return toolFailure('INVALID_COMPARISON', 'Choose one or more unique supported comparison rows.', { valid_ids: comparisonRowIds });
+      const selectedRows = suppliedRows ? [...input.row_ids as ComparisonRowId[]] : null;
+      abortIfNeeded(signal); const next = commit((s) => ({ ...s, compared: [...ids], selectedComparisonRowIds: selectedRows })); await delayPaint();
+      const all = evaluateCatalog(next.decision!, next.hidden).all;
+      const comparedRows = ids.map((id) => all.find((row) => row.product.id === id)).filter(Boolean) as Evaluation[];
+      const renderedRows = renderedComparisonRows(comparedRows, selectedRows).map((row) => row.id);
+      return jsonSafe({ ok: true, revision: next.revision, compared_product_ids: ids, rendered_row_ids: renderedRows, comparison_row_ids: renderedRows });
     };
 
     const showCalculation = async (input: Record<string, unknown>, signal?: AbortSignal) => {
