@@ -1,3 +1,5 @@
+import { flushSync } from 'react-dom';
+
 export type MorphTransitionKind = 'create' | 'update';
 
 type TransitionOptions = {
@@ -86,7 +88,7 @@ export async function runMorphSurfaceTransition({
 }: TransitionOptions) {
   signal?.throwIfAborted();
   if (!root || !live) {
-    apply();
+    flushSync(apply);
     await afterPaint();
     return;
   }
@@ -137,7 +139,7 @@ export async function runMorphSurfaceTransition({
   const animations: Animation[] = [];
   try {
     signal?.throwIfAborted();
-    apply();
+    flushSync(apply);
     await afterPaint();
     if (window.scrollX !== scrollLeft || window.scrollY !== scrollTop)
       window.scrollTo(scrollLeft, scrollTop);
